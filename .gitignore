@@ -1,0 +1,35 @@
+# Dependencies and build output
+node_modules/
+web/dist/
+.pio/
+firmware/.pio/
+# pio run -e savx -t download_fs (docs/05 §9.3) unpacks the board's LittleFS here; it can hold raw captures
+firmware/unpacked_fs/
+
+# Secrets: never commit these
+firmware/include/secrets.h
+web/.env*
+!web/.env.example
+
+# Firebase CLI cache and the local project alias (copy .firebaserc.example to .firebaserc)
+.firebase/
+.firebaserc
+
+# OS and logs
+.DS_Store
+*.log
+
+# Hosting / CI (research/r7-web-hosting.md)
+.deploy/
+.wrangler/
+web/.wrangler/
+gha-creds-*.json
+# Other hosts' local state, in case one is ever tried (not used: r7 §1)
+.vercel/
+.netlify/
+
+# Local tool state
+.claude/
+android-app/android/.gradle/
+android-app/android/build/
+android-app/android/app/build/

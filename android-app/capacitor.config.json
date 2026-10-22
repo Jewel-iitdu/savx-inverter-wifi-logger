@@ -1,0 +1,21 @@
+{
+  "appId": "io.github.savxlogger.solar",
+  "appName": "Solar Logger",
+  "webDir": "www",
+  "server": {
+    "url": "https://solar.<your-subdomain>.workers.dev",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "backgroundColor": "#0e1116",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover",
+      "style": "DEFAULT"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.146.0/config-schema.json",
+  // Assets-only Worker: no "main" script, so requests never count against the
+  // Workers Free script quota (100,000/day). Static-asset requests are free.
+  // The name is part of the PWA origin (solar.<account-subdomain>.workers.dev = https://solar.<your-subdomain>.workers.dev):
+  // never rename it after the app is on a Home Screen.
+  "name": "solar",
+  "compatibility_date": "2026-04-01",
+  "workers_dev": true,
+  "preview_urls": false,            // Version URLs are public by default: keep them off
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",  // unknown paths -> /index.html (200)
+    "html_handling": "auto-trailing-slash"            // the default; /index.html -> 307 -> /
+  }
+}

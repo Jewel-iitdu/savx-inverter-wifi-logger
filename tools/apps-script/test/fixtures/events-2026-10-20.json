@@ -1,0 +1,8 @@
+{
+  "1792476000-r03-o": {"ts":1792476000,"type":"RULE","sev":3,"st":"open","rid":"r03","val":5010,"thr":5000,"msg":"Daily grid usage > 5 kWh: now 5.01 kWh (limit 5.00 kWh today, est.)","ch":"email","em":"sent","emt":1792476200},
+  "1792480000-GRID_LOSS-o": {"ts":1792480000,"type":"GRID_LOSS","sev":4,"st":"open","msg":"Grid lost, on battery (SOC 78%)","ch":"ntfy,email","em":"sent"},
+  "1792482520-GRID_RESTORED-c": {"ts":1792482520,"type":"GRID_RESTORED","sev":3,"st":"clear","dur":2520,"msg":"Grid restored after 42 min"},
+  "1792490000-r01-o": {"ts":1792490000,"type":"RULE","sev":3,"st":"open","rid":"r01","val":2710,"thr":2500,"msg":"Load > 2500 W for 5 min: now 2,710 W (limit 2,500 W)","em":"cool"},
+  "1792491000-r01-r": {"ts":1792491000,"type":"RULE","sev":3,"st":"open","rid":"r01","msg":"Load > 2500 W for 5 min: still 2,710 W for 1 h 10 min","em":"q"},
+  "-Nq1legacyPushId": {"ts":1792470000,"type":"LOGGER_REBOOT","sev":2,"st":"info","msg":"Logger rebooted (power-on)"}
+}

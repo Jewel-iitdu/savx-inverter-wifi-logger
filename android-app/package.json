@@ -1,0 +1,17 @@
+{
+  "name": "solar-logger-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Android app for the Savx F4 solar logger: a Capacitor shell around https://solar.<your-subdomain>.workers.dev",
+  "scripts": {
+    "sync": "cap sync android",
+    "apk": "cap sync android && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

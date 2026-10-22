@@ -1,0 +1,15 @@
+# Hard constraints from the user (2026-10-21) — override any earlier assumption
+- NO new purchases possible. Work only with: ESP32-S3-N16R8 board (+USB cable), auto-direction RS485<->TTL module, M-M jumper wires (40), 25mm double-sided foam tape, 5V 2A USB charger (US plug), 100x68x50 mm waterproof ABS junction box.
+- Items available at home: a spare Ethernet/LAN patch cable (can be cut), the inverter's PAPER MANUAL (may contain RJ45 pinouts).
+- NOT available: multimeter, soldering iron, USB printer cable / OTG adapter, MAX3232, buck converter, F-F jumpers, cable glands, resistors.
+- CONFIRMED BY PHOTO (images/6.jpg, crop scratchpad/ports_label_zoom.jpg): bottom panel has TWO RJ45 jacks labelled "COM" (left, FREE) and "BMS" (right, occupied by the lithium battery's grey BMS cable — must stay connected). Chassis silkscreen: COM pin 1 = RXD, pin 2 = TXD, pin 8 = GND (pin 4 not labelled on chassis; manual says pin 4 = +VCC dongle supply, voltage unknown -> NEVER connect). BMS pin 1 = 485-B, pin 2 = 485-A, pin 4 = CAN-H, pin 5 = CAN-L.
+- The user's earlier statement that the free port is "RS485" was a misreading: the free port is COM = RS232 (manual). Protocol is almost certainly Voltronic PI30-family ASCII (manual tells users to use WatchPower), 2400 8N1.
+=> Primary path ("RS232-lite", no MAX3232): inverter TX pin -> RS485 module terminal A, module terminal B + module GND -> COM pin 8 (GND); module RO (receiver output) -> ESP32 UART RX with RX inversion; ESP32 UART TX (inverted, 0/3.3 V) -> inverter RX pin DIRECTLY (safe for an RS232 receiver input). Module DI (driver input) must be held HIGH (driver disabled). Whether pin 1 or pin 2 is the INVERTER's transmit line is ambiguous (label perspective) -> identify it first with an "idle-level test": only the module's A input touches candidate pins until the inverter-TX pin is found (RS232 TX idles at a NEGATIVE voltage -> RO reads steady LOW); only then connect the ESP32 TX GPIO to the other pin.
+=> Fallback: if both candidate pins idle non-negative, port may be TTL-level; firmware probes inverted and non-inverted UART at 2400/9600.
+=> Join male-to-male jumpers to male headers without soldering: cut jumper, strip, tightly wrap around header pin, secure with tape; use RS485 module screw terminals for the LAN-cable conductors.
+=> RJ45 port may carry +12V/+5V dongle supply on some pins: take the pinout from the paper manual; never connect unknown pins; ESP32 powered only from the USB charger.
+
+## Update (user, later): "I might be able to manage soldering iron or solder from a local shop"
+=> Baseline plan must still work WITHOUT soldering (strip + wrap + tape, screw terminals).
+=> Provide an OPTIONAL "if you get a soldering iron" upgrade path: solder jumper wires directly to header pins / module pins, solder LAN-cable conductors, heat-shrink if available (else tape).
+=> If the user does reach a local electronics/electrical shop, list a SHORT optional nice-to-have list (never required): a few resistors (e.g. 1 kOhm for a series resistor in the ESP32-TX -> inverter-RX line; 4.7-10 kOhm), electrical tape / heat-shrink, a cable tie. Do not make the design depend on them.

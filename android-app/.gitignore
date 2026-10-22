@@ -1,0 +1,9 @@
+node_modules/
+# Release signing key and its passwords: never commit; back them up (needed to ship updates of the same app)
+keystore/
+keystore.properties
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/

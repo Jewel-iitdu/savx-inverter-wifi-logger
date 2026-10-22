@@ -1,0 +1,345 @@
+{
+  "version": 1,
+  "about": "Single source of truth for mode letters, status bits, warning/fault code tables and event types. tools/gen_codes.py turns it into web/src/codes.ts (and the firmware agents may generate firmware/include/codes.h from the same file). LCD codes, QPIWS bits and REVO QALL codes use DIFFERENT numbering (d1 K13, v1 C13): always decode a code with the table named by its source tag.",
+  "sources": {
+    "manual": "Savx F4 paper manual v3.0, section 5 'Fault Reference Code' and section 6 'Warning Indicator' (printed pages 27-28; reference/Savx-F4-user-manual.pdf page 15). [CONFIRMED-primary]",
+    "p2014": "Voltronic 'Infini/Axpert' PI30 protocol P2014 (HS/MS/MSX), QPIWS a0..a31 and fault-code table. Via research/r2-voltronic-pi30.md section 5.6. [CONFIRMED-primary]",
+    "p2015": "Voltronic PI30 P2015 (Plus Duo), QPIWS b1..b38 (b1 = a0). Via r2 section 5.6. [CONFIRMED-primary]",
+    "pmax": "Voltronic PI30MAX (2021-02-17), QPIWS a0..a35; 24 V model fault code in a31..a32. Via r2 section 5.6 and v1 V19. [CONFIRMED-primary]",
+    "pgk": "Voltronic PIP-GK/MK, QPIWS a0..a35, fault code in a31..a32, extra QMOD letters. Via r2 section 5.6. [CONFIRMED-primary]",
+    "revo": "Sorotec 'Revo RS232 Communication Protocol V02' (2020-11-12), QALL warning code table 00-07/21-26 and fault code table 01-12 (Google-translated original wording kept). Via v1 C12/C13. [CONFIRMED-primary]",
+    "mppsolar": "jblance/mpp-solar pi30revo.py additions (warning 08, 39). NOT in the Sorotec document. [SECONDARY]"
+  },
+
+  "qmod": [
+    { "code": "P", "name": "Power on", "short": "Power-on", "docs": "P2014, PMAX, PGK" },
+    { "code": "S", "name": "Standby", "short": "Standby", "docs": "all" },
+    { "code": "L", "name": "Line (grid) mode", "short": "Line", "docs": "all" },
+    { "code": "B", "name": "Battery (inverter) mode", "short": "Battery", "docs": "all" },
+    { "code": "F", "name": "Fault", "short": "Fault", "docs": "all" },
+    { "code": "H", "name": "Power saving (REVO: sleep)", "short": "Saving", "docs": "P2014, P2015, PGK; REVO calls it Sleep" },
+    { "code": "D", "name": "Shutdown", "short": "Shutdown", "docs": "PMAX, PGK" },
+    { "code": "C", "name": "Charge mode", "short": "Charge", "docs": "PGK" },
+    { "code": "Y", "name": "Bypass", "short": "Bypass", "docs": "PGK (PIP-MK)" },
+    { "code": "E", "name": "ECO mode", "short": "ECO", "docs": "PGK (PIP-MK)" }
+  ],
+
+  "statusBits": {
+    "about": "QPIGS field 16 is 8 chars 'b7b6b5b4b3b2b1b0' (first char = b7). QPIGS field 20 is 3 chars 'b10b9b8'. Index = character position in the string.",
+    "st": [
+      { "pos": 0, "bit": "b7", "name": "SBU priority version added (PGK: PV or AC feeds the load)" },
+      { "pos": 1, "bit": "b6", "name": "Configuration changed" },
+      { "pos": 2, "bit": "b5", "name": "SCC firmware updated" },
+      { "pos": 3, "bit": "b4", "name": "Load on" },
+      { "pos": 4, "bit": "b3", "name": "Battery voltage steady while charging" },
+      { "pos": 5, "bit": "b2", "name": "Charging (any source)" },
+      { "pos": 6, "bit": "b1", "name": "Solar (SCC) charging" },
+      { "pos": 7, "bit": "b0", "name": "AC (utility) charging" }
+    ],
+    "st2": [
+      { "pos": 0, "bit": "b10", "name": "Charging to float" },
+      { "pos": 1, "bit": "b9", "name": "Switch on" },
+      { "pos": 2, "bit": "b8", "name": "Reserved / dustproof installed" }
+    ]
+  },
+
+  "qpiws": {
+    "about": "Bit string, character k = a_k ('1' = active). Kinds: W warning, F fault, FA1 fault if a1=1 else warning, FC fault-code digit, WF warning or fault (PGK wording), R reserved. Fault-class rule (d1 section 3.9): a1-a4, a7, a8, a18-a24 plus a9/a10/a11/a16 when a1=1.",
+    "variants": [
+      {
+        "id": "p2014", "length": 32, "label": "PI30 P2014 (32 chars)",
+        "faultCodeAt": null,
+        "bits": [
+          [0, "R", "Reserved"],
+          [1, "F", "Inverter fault"],
+          [2, "F", "Bus over voltage"],
+          [3, "F", "Bus under voltage"],
+          [4, "F", "Bus soft start failed"],
+          [5, "W", "Line (grid) fail"],
+          [6, "W", "Output short circuit (OPV short)"],
+          [7, "F", "Inverter voltage too low"],
+          [8, "F", "Inverter voltage too high"],
+          [9, "FA1", "Over temperature"],
+          [10, "FA1", "Fan locked"],
+          [11, "FA1", "Battery voltage high"],
+          [12, "W", "Battery low alarm"],
+          [13, "R", "Reserved"],
+          [14, "W", "Battery under shutdown"],
+          [15, "R", "Reserved"],
+          [16, "FA1", "Overload"],
+          [17, "W", "EEPROM fault"],
+          [18, "F", "Inverter over current"],
+          [19, "F", "Inverter soft start failed"],
+          [20, "F", "Self test failed"],
+          [21, "F", "Output DC voltage over"],
+          [22, "F", "Battery open"],
+          [23, "F", "Current sensor failed"],
+          [24, "F", "Battery short"],
+          [25, "W", "Power limit"],
+          [26, "W", "PV voltage high"],
+          [27, "W", "MPPT overload fault"],
+          [28, "W", "MPPT overload warning"],
+          [29, "W", "Battery too low to charge"],
+          [30, "R", "Reserved"],
+          [31, "R", "Reserved"]
+        ]
+      },
+      {
+        "id": "pmax", "length": 36, "label": "PI30 MAX (36 chars, 24 V fault code in a31-a32)",
+        "faultCodeAt": [31, 32],
+        "bits": [
+          [0, "W", "PV loss"],
+          [1, "F", "Inverter fault"],
+          [2, "F", "Bus over voltage"],
+          [3, "F", "Bus under voltage"],
+          [4, "F", "Bus soft start failed"],
+          [5, "W", "Line (grid) fail"],
+          [6, "F", "Output short circuit (OPV short)"],
+          [7, "F", "Inverter voltage too low"],
+          [8, "F", "Inverter voltage too high"],
+          [9, "FA1", "Over temperature"],
+          [10, "FA1", "Fan locked"],
+          [11, "FA1", "Battery voltage high"],
+          [12, "W", "Battery low alarm"],
+          [13, "R", "Reserved"],
+          [14, "W", "Battery under shutdown"],
+          [15, "W", "Battery derating"],
+          [16, "FA1", "Overload"],
+          [17, "W", "EEPROM fault"],
+          [18, "F", "Inverter over current"],
+          [19, "F", "Inverter soft start failed"],
+          [20, "F", "Self test failed"],
+          [21, "F", "Output DC voltage over"],
+          [22, "F", "Battery open"],
+          [23, "F", "Current sensor failed"],
+          [24, "R", "Reserved"],
+          [25, "R", "Reserved"],
+          [26, "R", "Reserved"],
+          [27, "R", "Reserved"],
+          [28, "R", "Reserved"],
+          [29, "R", "Reserved"],
+          [30, "R", "Reserved"],
+          [31, "FC", "Fault code digit 1 (24 V model)"],
+          [32, "FC", "Fault code digit 2 (24 V model)"],
+          [33, "R", "Reserved (48 V model: fault code digit)"],
+          [34, "R", "Reserved"],
+          [35, "W", "Battery equalization"]
+        ]
+      },
+      {
+        "id": "pgk", "length": 36, "label": "PIP-GK/MK (36 chars, fault code in a31-a32)",
+        "faultCodeAt": [31, 32],
+        "bits": [
+          [0, "W", "PV loss"],
+          [1, "F", "Inverter fault"],
+          [2, "F", "Bus over voltage"],
+          [3, "F", "Bus under voltage"],
+          [4, "F", "Bus soft start failed"],
+          [5, "W", "Line (grid) fail"],
+          [6, "F", "Output short circuit (OPV short)"],
+          [7, "F", "Inverter voltage too low"],
+          [8, "F", "Inverter voltage too high"],
+          [9, "FA1", "Over temperature"],
+          [10, "FA1", "Fan locked"],
+          [11, "FA1", "Battery voltage high"],
+          [12, "W", "Battery low alarm"],
+          [13, "R", "Reserved"],
+          [14, "W", "Battery under shutdown"],
+          [15, "W", "Battery derating"],
+          [16, "FA1", "Overload"],
+          [17, "W", "EEPROM fault"],
+          [18, "F", "Inverter over current"],
+          [19, "F", "Inverter soft start failed"],
+          [20, "F", "Self test failed"],
+          [21, "F", "Output DC voltage over"],
+          [22, "F", "Battery open"],
+          [23, "F", "Current sensor failed"],
+          [24, "F", "Battery short"],
+          [25, "W", "Power limit"],
+          [26, "WF", "PV voltage high"],
+          [27, "F", "MPPT overload fault"],
+          [28, "W", "MPPT overload warning"],
+          [29, "W", "Battery too low to charge"],
+          [30, "F", "DC/DC over current"],
+          [31, "FC", "Fault code digit 1"],
+          [32, "FC", "Fault code digit 2"],
+          [33, "W", "Low PV energy"],
+          [34, "W", "High AC input during BUS soft start"],
+          [35, "W", "Battery equalization"]
+        ]
+      },
+      {
+        "id": "p2015", "length": 38, "label": "PI30 P2015 / Plus Duo (38 chars, b1 = a0)",
+        "faultCodeAt": null,
+        "bits": [
+          [0, "R", "Reserved"],
+          [1, "F", "Inverter fault"],
+          [2, "F", "Bus over voltage"],
+          [3, "F", "Bus under voltage"],
+          [4, "F", "Bus soft start failed"],
+          [5, "W", "Line (grid) fail"],
+          [6, "W", "Output short circuit (OPV short)"],
+          [7, "F", "Inverter voltage too low"],
+          [8, "F", "Inverter voltage too high"],
+          [9, "FA1", "Over temperature"],
+          [10, "FA1", "Fan locked"],
+          [11, "FA1", "Battery voltage high"],
+          [12, "W", "Battery low alarm"],
+          [13, "R", "Reserved (overcharge)"],
+          [14, "W", "Battery under shutdown"],
+          [15, "W", "Battery derating"],
+          [16, "FA1", "Overload"],
+          [17, "W", "EEPROM fault"],
+          [18, "F", "Inverter over current"],
+          [19, "F", "Inverter soft start failed"],
+          [20, "F", "Self test failed"],
+          [21, "F", "Output DC voltage over"],
+          [22, "F", "Battery open"],
+          [23, "F", "Current sensor failed"],
+          [24, "F", "Battery short"],
+          [25, "W", "Power limit"],
+          [26, "W", "PV1 voltage high"],
+          [27, "W", "MPPT1 overload fault"],
+          [28, "W", "MPPT1 overload warning"],
+          [29, "W", "Battery too low to charge (1)"],
+          [30, "W", "PV2 voltage high"],
+          [31, "W", "MPPT2 overload fault"],
+          [32, "W", "MPPT2 overload warning"],
+          [33, "W", "Battery too low to charge (2)"],
+          [34, "W", "PV3 voltage high"],
+          [35, "W", "MPPT3 overload fault"],
+          [36, "W", "MPPT3 overload warning"],
+          [37, "W", "Battery too low to charge (3)"]
+        ]
+      }
+    ]
+  },
+
+  "lcdFault": {
+    "about": "Fault codes shown on the inverter LCD (Savx manual section 5). Same Voltronic table as P2014/PMAX/PGK; also used for the fault code embedded in a 36-char QPIWS (a31-a32).",
+    "codes": [
+      { "code": "01", "text": "Fan is locked when inverter is off" },
+      { "code": "02", "text": "Over temperature" },
+      { "code": "03", "text": "Battery voltage is too high" },
+      { "code": "04", "text": "Battery voltage is too low" },
+      { "code": "05", "text": "Output short circuited or over temperature is detected by internal converter components" },
+      { "code": "06", "text": "Output voltage is too high" },
+      { "code": "07", "text": "Overload time out" },
+      { "code": "08", "text": "Bus voltage is too high" },
+      { "code": "09", "text": "Bus soft start failed" },
+      { "code": "51", "text": "Over current or surge" },
+      { "code": "52", "text": "Bus voltage is too low" },
+      { "code": "53", "text": "Inverter soft start failed" },
+      { "code": "55", "text": "Over DC voltage in AC output" },
+      { "code": "57", "text": "Current sensor failed" },
+      { "code": "58", "text": "Output voltage is too low" },
+      { "code": "59", "text": "PV voltage is over limitation" }
+    ]
+  },
+
+  "voltronicFaultExtra": {
+    "about": "Codes from the Voltronic protocol documents that are NOT in the Savx manual. Shown only as a fallback, marked 'not in the Savx manual'.",
+    "codes": [
+      { "code": "10", "text": "PV over current (PMAX) / PV charger current over (PGK)" },
+      { "code": "11", "text": "Main relay failed (P2014) / PV over voltage (PMAX)" },
+      { "code": "12", "text": "DC/DC over current (PMAX)" },
+      { "code": "13", "text": "Battery discharge over current (PMAX)" },
+      { "code": "54", "text": "Self-test failed (P2014)" },
+      { "code": "56", "text": "Battery connection open (P2014)" },
+      { "code": "60", "text": "Inverter negative power / power feedback protection" }
+    ]
+  },
+
+  "lcdWarning": {
+    "about": "Warning codes shown on the inverter LCD (Savx manual section 6). The logger cannot read these numbers directly; they are a legend for what the LCD shows.",
+    "codes": [
+      { "code": "01", "text": "Fan is locked when inverter is on" },
+      { "code": "02", "text": "Over temperature" },
+      { "code": "03", "text": "Battery is over-charged" },
+      { "code": "04", "text": "Low battery" },
+      { "code": "07", "text": "Overload" },
+      { "code": "08", "text": "Discharge current limiting" },
+      { "code": "10", "text": "Output power derating" },
+      { "code": "15", "text": "PV energy is low" },
+      { "code": "16", "text": "High AC input (>280VAC) during BUS soft start" },
+      { "code": "E9", "text": "Battery equalization" },
+      { "code": "bP", "text": "Battery is not connected" }
+    ]
+  },
+
+  "revoWarning": {
+    "about": "Sorotec REVO QALL field 16 (warning code). Original Google-translated wording; 'PV low pressure' most likely means 'PV low voltage'.",
+    "codes": [
+      { "code": "00", "text": "No warning" },
+      { "code": "01", "text": "Low battery" },
+      { "code": "02", "text": "Mains low voltage" },
+      { "code": "03", "text": "Mains high voltage" },
+      { "code": "04", "text": "Overload" },
+      { "code": "05", "text": "Over temperature" },
+      { "code": "06", "text": "Fan lock" },
+      { "code": "07", "text": "Battery overvoltage" },
+      { "code": "21", "text": "PV low pressure (low voltage)" },
+      { "code": "22", "text": "PV overvoltage" },
+      { "code": "23", "text": "PV overcurrent" },
+      { "code": "24", "text": "PV over temperature" },
+      { "code": "25", "text": "PV overload" },
+      { "code": "26", "text": "PV boost failed" },
+      { "code": "08", "text": "Discharge overcurrent (mpp-solar addition, not in the Sorotec doc)", "secondary": true },
+      { "code": "39", "text": "BMS communication lost (mpp-solar addition, not in the Sorotec doc)", "secondary": true }
+    ]
+  },
+
+  "revoFault": {
+    "about": "Sorotec REVO QALL field 17 (fault code). NOT the same numbering as the LCD fault codes.",
+    "codes": [
+      { "code": "00", "text": "No fault" },
+      { "code": "01", "text": "BUS overvoltage" },
+      { "code": "02", "text": "Inverter overvoltage" },
+      { "code": "03", "text": "Inverter low voltage" },
+      { "code": "04", "text": "BUS failure" },
+      { "code": "05", "text": "Overload fault" },
+      { "code": "06", "text": "Output short circuit" },
+      { "code": "07", "text": "Low battery voltage failure (battery too low at start-up, start-up not allowed)" },
+      { "code": "08", "text": "Inverter failed" },
+      { "code": "09", "text": "BUS low voltage" },
+      { "code": "10", "text": "Parallel failure" },
+      { "code": "11", "text": "Over temperature fault" },
+      { "code": "12", "text": "Battery over-voltage fault (battery too high at start-up; cell count may be wrong)" }
+    ]
+  },
+
+  "severity": [
+    { "sev": 0, "name": "Debug" },
+    { "sev": 1, "name": "Info" },
+    { "sev": 2, "name": "Notice" },
+    { "sev": 3, "name": "Warning" },
+    { "sev": 4, "name": "Alert" },
+    { "sev": 5, "name": "Critical" }
+  ],
+
+  "eventTypes": {
+    "about": "Event 'type' strings written by the firmware to events/{date}/{id} (d1 section 7.2). The app shows unknown types verbatim. 'clears' names the type whose open alert this type closes (an event of the same type with st=clear also closes it). TEST_ALERT is the type the web app expects for cfg.testAlert (not named in d1). RULE (severity set per rule; the event carries rid, val, thr) and RULE_INVALID come from the owner's alert rules (research/r8-email-alerts.md section 3.6).",
+    "types": [
+      { "type": "INVERTER_FAULT", "sev": 5, "label": "Inverter fault" },
+      { "type": "BATT_CRITICAL", "sev": 5, "label": "Battery critical" },
+      { "type": "BATT_LOW", "sev": 4, "label": "Battery low" },
+      { "type": "BATT_HIGH", "sev": 4, "label": "Battery voltage high" },
+      { "type": "GRID_LOSS", "sev": 4, "label": "Grid lost" },
+      { "type": "GRID_RESTORED", "sev": 3, "label": "Grid restored", "clears": "GRID_LOSS" },
+      { "type": "GRID_ABNORMAL", "sev": 2, "label": "Grid voltage abnormal" },
+      { "type": "OVERLOAD", "sev": 4, "label": "Overload" },
+      { "type": "OVER_TEMP", "sev": 4, "label": "Over temperature" },
+      { "type": "PV_OVERVOLT", "sev": 4, "label": "PV over-voltage" },
+      { "type": "PV_LOW_DAY", "sev": 2, "label": "Low solar today" },
+      { "type": "LINK_LOST", "sev": 3, "label": "Inverter link lost" },
+      { "type": "LOGGER_REBOOT", "sev": 2, "label": "Logger rebooted" },
+      { "type": "QUOTA_GUARD", "sev": 2, "label": "Quota guard active" },
+      { "type": "DATA_DROPPED", "sev": 2, "label": "Data dropped" },
+      { "type": "BACKLOG_STUCK", "sev": 2, "label": "Upload backlog stuck" },
+      { "type": "DAILY_SUMMARY", "sev": 1, "label": "Daily summary" },
+      { "type": "TEST_ALERT", "sev": 1, "label": "Test alert" },
+      { "type": "RULE", "sev": 3, "label": "Rule alert" },
+      { "type": "RULE_INVALID", "sev": 2, "label": "Rule ignored by the logger" }
+    ]
+  }
+}

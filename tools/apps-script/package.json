@@ -1,0 +1,12 @@
+{
+  "name": "savx-mailer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Google Apps Script e-mail mailer for the Savx logger (research/r8-email-alerts.md). Tests only; nothing here is deployed by npm.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node -e \"for (const f of ['Lib.gs','Code.gs']) new Function(require('fs').readFileSync(f,'utf8')); JSON.parse(require('fs').readFileSync('appsscript.json','utf8')); console.log('Lib.gs, Code.gs and appsscript.json parse')\""
+  }
+}

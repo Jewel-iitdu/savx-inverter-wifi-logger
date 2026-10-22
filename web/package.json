@@ -1,0 +1,27 @@
+{
+  "name": "savx-logger-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "iPhone PWA dashboard for the Savx F4 ESP32 datalogger (Firebase RTDB + uPlot).",
+  "type": "module",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "codes": "python3 ../tools/gen_codes.py",
+    "icons": "node scripts/gen-icons.mjs"
+  },
+  "dependencies": {
+    "firebase": "13.0.0",
+    "preact": "11.0.1",
+    "uplot": "1.6.32"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "6.4.4"
+  }
+}

@@ -1,0 +1,68 @@
+# Deploy firebase/database.rules.json (UIDs filled in from repository variables by tools/render-rules.sh).
+#   pull request          -> server-side dry run (validates syntax against the real project)
+#   push to main / manual -> deploy
+# Credential: keyless Workload Identity Federation (preferred) or a service-account key secret.
+# research/r7-web-hosting.md section 4.4
+name: deploy-rules
+
+on:
+  push:
+    branches: [main]
+    paths: ['firebase/database.rules.json', 'tools/render-rules.sh', '.github/workflows/deploy-rules.yml']
+  pull_request:
+    paths: ['firebase/database.rules.json', 'tools/render-rules.sh', '.github/workflows/deploy-rules.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # OIDC token for Workload Identity Federation
+
+concurrency:
+  group: deploy-rules
+  cancel-in-progress: false
+
+env:
+  FIREBASE_TOOLS_VERSION: 15.32.1   # Node >= 20; published 2026-09-30
+
+jobs:
+  rules:
+    # Off until the repository variable DEPLOY_ENABLED = 'true' (rules are published by hand in the console today)
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Render the rules with the real UIDs into .deploy/
+        env:
+          OWNER_UID: ${{ vars.FIREBASE_OWNER_UID }}
+          DEVICE_UID: ${{ vars.FIREBASE_DEVICE_UID }}
+          MAILER_UID: ${{ vars.FIREBASE_MAILER_UID }}   # 'none' until the e-mail mailer exists (r8 section 7)
+        run: sh tools/render-rules.sh
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.FIREBASE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_RULES_SA }}
+          # Key fallback (section 4.6): delete the two lines above and use instead
+          # credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Dry run (PR / other branches) or deploy (main)
+        working-directory: .deploy
+        env:
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+          MODE: ${{ (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') && 'deploy' || 'dry-run' }}
+        run: |
+          [ -n "$PROJECT" ] || { echo "::error::repository variable FIREBASE_PROJECT_ID is not set"; exit 1; }
+          args=(deploy --only database --project "$PROJECT" --non-interactive)
+          if [ "$MODE" != deploy ]; then args+=(--dry-run); fi
+          npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" "${args[@]}"
+          echo "RTDB rules: $MODE OK for $PROJECT at ${GITHUB_SHA::12}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Savx Logger</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--mut:#5c6670;--line:#e2e6ea;--acc:#0b6bcb;--ok:#1a7f37;--warn:#b76e00;--bad:#c62828;
+--pv:#d18a00;--ld:#2f6fd6;--bt:#1a8f5a;--soc:#7b4fd6;--gr:#6b7480;--chip:#eef1f4}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#171b21;--fg:#e6e9ed;--mut:#9aa4ae;--line:#2a3038;--acc:#5aa2ff;
+--ok:#4cc26f;--warn:#e0a030;--bad:#ff6b6b;--pv:#f0b23a;--ld:#6e9cff;--bt:#46c48a;--soc:#a98bff;--gr:#8d96a0;--chip:#222831}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 16px)}
+header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px 0}
+h1{font-size:17px;margin:0 0 8px;display:flex;gap:8px;align-items:center}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--mut);display:inline-block}
+nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}nav::-webkit-scrollbar{display:none}
+nav a{padding:8px 12px;border-radius:8px 8px 0 0;color:var(--mut);text-decoration:none;white-space:nowrap;font-weight:600}
+nav a.on{color:var(--acc);background:var(--card);border:1px solid var(--line);border-bottom-color:var(--card);margin-bottom:-1px}
+main{padding:12px 16px;max-width:900px;margin:0 auto}section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 12px}
+.card h2{font-size:14px;margin:0 0 8px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
+.tile .k{font-size:12px;color:var(--mut)}.tile .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tile .s{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.banner{border-radius:10px;padding:10px 12px;margin:0 0 12px;font-weight:600;display:none}
+.banner.bad{display:block;background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.banner.warn{display:block;background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:2px 10px;font-size:12px;margin:2px 4px 2px 0}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:10px;
+padding:9px 14px;cursor:pointer;margin:4px 6px 4px 0}button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.d{background:transparent;border-color:var(--bad);color:var(--bad)}button:disabled{opacity:.45;cursor:not-allowed}
+input,select{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);max-width:100%}
+label{display:block;margin:6px 0}table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top}th{color:var(--mut);font-weight:600}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px;max-height:340px;overflow:auto}
+.step{border-left:3px solid var(--line);padding-left:12px;margin:0 0 4px}.step.done{border-color:var(--ok)}.step.cur{border-color:var(--acc)}
+.warnbox{border:1px solid var(--warn);border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.mut{color:var(--mut)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+canvas{width:100%;height:220px;display:block}.legend span{margin-right:12px;font-size:12px;white-space:nowrap}
+.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle}
+progress{width:100%;height:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="hdot"></span><span>Savx F4 logger</span><span class="chip" id="hmode">-</span><span class="mut" id="hage" style="font-size:12px;font-weight:400"></span></h1>
+  <nav id="nav">
+    <a href="#live">Live</a><a href="#chart">24 h</a><a href="#hist">History</a><a href="#diag">Diagnostics</a><a href="#raw">Raw</a><a href="#set">Settings</a>
+  </nav>
+</header>
+<main>
+<div class="banner" id="banner"></div>
+
+<section id="live">
+  <div class="grid" id="tiles"></div>
+  <div class="card" style="margin-top:12px"><h2>Today (kWh)</h2><div class="grid" id="etiles"></div>
+    <p class="mut" style="font-size:12px;margin:8px 0 0">Integrated on the logger. Grid is an estimate. PV (inverter) is the inverter's own counter where available.</p></div>
+  <div class="card"><h2>Warnings / faults</h2><div id="warn" class="mut">-</div></div>
+</section>
+
+<section id="chart">
+  <div class="card"><div class="row"><b>Range</b>
+    <button data-r="360">6 h</button><button data-r="720">12 h</button><button data-r="1440" class="p">24 h</button></div>
+    <h2 style="margin-top:8px">Power (W)</h2>
+    <div class="legend"><span><i style="background:var(--pv)"></i>PV</span><span><i style="background:var(--ld)"></i>Load</span><span><i style="background:var(--bt)"></i>Battery (+ charge)</span></div>
+    <canvas id="c1"></canvas>
+    <h2 style="margin-top:12px">Battery</h2>
+    <div class="legend"><span><i style="background:var(--soc)"></i>SOC %</span><span><i style="background:var(--bt)"></i>Battery V (right)</span></div>
+    <canvas id="c2"></canvas>
+    <p class="mut" style="font-size:12px">From the logger's RAM (5 s samples, cleared on reboot). Older days: History.</p>
+  </div>
+</section>
+
+<section id="hist">
+  <div class="card"><div class="row"><input type="date" id="hdate"><button class="p" id="hload">Load day</button></div>
+    <div id="hsum" class="mut" style="margin:8px 0"></div>
+    <div class="legend"><span><i style="background:var(--pv)"></i>PV W</span><span><i style="background:var(--ld)"></i>Load W</span></div>
+    <canvas id="c3"></canvas>
+    <div id="hdays" style="margin-top:8px"></div>
+  </div>
+</section>
+
+<section id="diag">
+  <div class="card"><h2>Admin</h2>
+    <div class="row"><input type="password" id="pw" placeholder="admin password" autocomplete="current-password"><button id="pwsave">Use</button><span id="pwst" class="mut"></span></div>
+    <p class="mut" style="font-size:13px;margin:6px 0 0">Needed for diagnostics and settings. Default = the setup-portal (AP) password printed on the USB log at boot.</p>
+  </div>
+  <div class="card"><h2>Link</h2><div id="lstat">-</div></div>
+
+  <div class="card step" id="s1"><h2>Step 1 - Module self-ID (bench, inverter NOT connected)</h2>
+    <ol style="padding-left:18px;margin:0 0 6px">
+      <li>Module VCC to ESP 3V3, GND to GND, header RXD to GPIO18, header TXD to GPIO16. Never 5 V.</li>
+      <li>A+ and B- open: run self-ID - expect <b>open-ok</b> (both HIGH).</li>
+      <li>Jumper A+ to ESP GND and B- to ESP 3V3, run again - the pin that reads LOW is RO. Then remove the jumpers.</li></ol>
+    <button id="bself">Run self-ID</button><div id="rself" class="mut"></div>
+    <details style="margin-top:6px"><summary class="mut">Optional bench UART loopback</summary>
+      <div class="warnbox">Only BEFORE the module is wired (do it first): GPIO17 jumpered to GPIO18, module AND inverter disconnected. This transmits the read-only QPI frame on GPIO17 for under a second. Refused once a self-ID or idle test has run.</div>
+      <label><input type="checkbox" id="lbok"> GPIO17-GPIO18 jumper fitted, nothing else on those pins</label>
+      <button id="bloop">Run loopback</button><div id="rloop" class="mut"></div></details>
+  </div>
+
+  <div class="card step" id="s2"><h2>Step 2 - Idle-level test (receive only)</h2>
+    <div class="warnbox">Wire ONLY: module B- to COM pin 8 (GND) and module A+ to the candidate pin. GPIO17 stays disconnected. Never pin 4. Never touch the BMS jack.</div>
+    <p style="margin:4px 0">Put A+ on pin 1 and test, then move A+ to pin 2 and test. Repeat the TX pin once more. The inverter's TX pin reads steady LOW (it idles negative).</p>
+    <button id="bi1">Test pin 1 (10 s)</button><button id="bi2">Test pin 2 (10 s)</button>
+    <details style="margin-top:6px" id="updet"><summary><b>2b - Upper check of the RX pin</b> (needed before GPIO17)</summary>
+      <div class="warnbox">Unplug the RJ45 and the USB first. Take the pin-8 wire <b>together with the P5 jumper</b> out of B- (they stay joined and on ESP GND; tape the bare pin). Put a jumper from <b>B- to ESP 3V3</b>. Put the RX candidate on A+. B- must never touch 3V3 and GND at the same time. If the board does not boot, unplug at once.</div>
+      <p style="margin:4px 0">Run it twice. Expected: <b>below-3V3</b>. <b>ABOVE-3V3</b> means a positive pin (pin 4?): stop. Afterwards undo the jumper and put pin 8 + P5 back into B-.</p>
+      <button id="bu1">Upper check pin 1</button><button id="bu2">Upper check pin 2</button></details>
+    <progress id="iprog" max="100" value="0" style="display:none"></progress>
+    <table id="itab"><thead><tr><th>Pin</th><th>B-</th><th>% LOW</th><th>Edges</th><th>Verdict</th></tr></thead><tbody></tbody></table>
+    <p id="iarm" class="mut"></p>
+  </div>
+
+  <div class="card step" id="s3"><h2>Step 3 - Connect GPIO17 and arm</h2>
+    <p id="armtxt" class="mut">Complete step 2 first.</p>
+    <label><input type="checkbox" class="ac"> Module A+ is on the inverter TX pin, B- on pin 8 + P5 again (the 3V3 jumper is removed)</label>
+    <label><input type="checkbox" class="ac"> GPIO17 is wired to <b id="rxpin">?</b> and to nothing else</label>
+    <label><input type="checkbox" class="ac"> Pin 4 and the unused conductors are cut and taped; BMS cable untouched</label>
+    <label><input type="checkbox" class="ac"> The Mac/laptop is unplugged or on battery (no ground loop)</label>
+    <button class="p" id="barm" disabled>Arm link (enable TX)</button><div id="rarm" class="mut"></div>
+  </div>
+
+  <div class="card step" id="s4"><h2>Step 4 - Read-only protocol probe</h2>
+    <p class="mut" style="margin:0 0 6px">Starts automatically after arming (1-2 min). Compare output V, battery V and the U1/U2 versions with the LCD.</p>
+    <button id="bprobe">Re-run probe</button><button id="bcap">Raw capture on</button>
+    <div id="psum" style="margin:6px 0"></div><pre id="plog">-</pre>
+  </div>
+  <div class="card"><h2>Reset</h2><button class="d" id="breset">Disarm / reset link</button><button class="d" id="bresetall">Reset incl. self-ID</button>
+    <div id="rreset" class="mut"></div></div>
+</section>
+
+<section id="raw">
+  <div class="card"><h2>Last reply per command</h2><button id="rawr">Refresh</button>
+    <table id="rawt"><thead><tr><th>Cmd</th><th>Result</th><th>Age</th><th>Reply</th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><h2>Identity</h2><pre id="ident">-</pre></div>
+</section>
+
+<section id="set">
+  <div class="card"><h2>Alert thresholds</h2><form id="cfgf"></form><button class="p" id="cfgs">Save</button><span id="cfgr" class="mut"></span>
+    <p class="mut" style="font-size:12px">When the cloud is configured, the dashboard's settings override these.</p></div>
+  <div class="card"><h2>Admin password</h2><input type="password" id="npw" placeholder="new password (min 6)"><button id="npws">Change</button><span id="npwr" class="mut"></span></div>
+  <div class="card"><h2>System</h2><div id="sys" class="mono">-</div>
+    <p><a class="btn" href="/update">Firmware update (OTA)</a><button id="breboot">Reboot</button></p></div>
+</section>
+</main>
+<script>
+"use strict";
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const st={pw:"",tab:"live",range:1440,diagSeq:-1,armPin:0};
+try{st.pw=sessionStorage.getItem("pw")||""}catch(e){}
+const MODES={P:"Power on",S:"Standby",L:"Line",B:"Battery",F:"FAULT",H:"Power saving",D:"Shutdown",C:"Charge",Y:"Bypass",E:"ECO"};
+const QPIWS=["Reserved/PV loss","Inverter fault","Bus over","Bus under","Bus soft fail","Line fail","OPV short","Inverter voltage low",
+"Inverter voltage high","Over temperature","Fan locked","Battery voltage high","Battery low alarm","Reserved","Battery under shutdown",
+"Battery derating","Over load","EEPROM fault","Inverter over current","Inverter soft fail","Self test fail","OP DC voltage over",
+"Battery open","Current sensor fail","Battery short","Power limit","PV voltage high","MPPT overload fault","MPPT overload warning",
+"Battery too low to charge","Reserved","Fault code digit"];
+const REVO_W={1:"Low battery",2:"Mains low voltage",3:"Mains high voltage",4:"Overload",5:"Over temperature",6:"Fan lock",7:"Battery overvoltage",
+21:"PV low voltage",22:"PV overvoltage",23:"PV overcurrent",24:"PV over temperature",25:"PV overload",26:"PV boost failed"};
+const REVO_F={1:"BUS overvoltage",2:"Inverter overvoltage",3:"Inverter low voltage",4:"BUS failure",5:"Overload fault",6:"Output short circuit",
+7:"Low battery voltage at start-up",8:"Inverter failed",9:"BUS low voltage",10:"Parallel failure",11:"Over temperature fault",12:"Battery over-voltage at start-up"};
+const LCD_F={1:"Fan locked (inverter off)",2:"Over temperature",3:"Battery voltage too high",4:"Battery voltage too low",5:"Output short / over temperature",
+6:"Output voltage too high",7:"Overload time out",8:"Bus voltage too high",9:"Bus soft start failed",51:"Over current or surge",52:"Bus voltage too low",
+53:"Inverter soft start failed",55:"Over DC voltage in AC output",57:"Current sensor failed",58:"Output voltage too low",59:"PV voltage over limit"};
+function hdr(){return st.pw?{Authorization:"Basic "+btoa("admin:"+st.pw)}:{}}
+async function api(p,o={}){o.headers=Object.assign({},o.headers||{},hdr());
+  if(o.form){o.method="POST";o.headers["Content-Type"]="application/x-www-form-urlencoded";o.body=new URLSearchParams(o.form).toString();delete o.form}
+  const r=await fetch(p,o);let j=null;try{j=await r.json()}catch(e){}
+  if(r.status==401){$("#pwst").textContent="password needed / wrong";$("#pwst").className="bad"}
+  return {ok:r.ok,status:r.status,j:j||{}}}
+const f=(v,d=0)=>v==null||isNaN(v)?"-":Number(v).toFixed(d);
+const kwh=v=>v==null?"-":(v/1000).toFixed(2);
+function tile(k,v,s,c){return `<div class="tile"><div class="k">${k}</div><div class="v"${c?` style="color:${c}"`:""}>${v}</div><div class="s">${s||"&nbsp;"}</div></div>`}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function localHM(ep){const d=new Date((ep+6*3600)*1000);return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0")}
+
+// ---- live
+async function live(){const r=await api("/api/live");if(!r.ok)return;const s=r.j,age=s.age_ms==null?-1:s.age_ms;
+  const off=!s.lk||age<0||age>60000;$("#hdot").style.background=off?"var(--bad)":"var(--ok)";
+  $("#hmode").textContent=s.md?(MODES[s.md]||s.md):"no data";$("#hage").textContent=age<0?"":"updated "+Math.round(age/1000)+" s ago";
+  const b=$("#banner");if(off){b.className="banner bad";b.textContent=age<0?"No inverter data yet - see Diagnostics.":"Inverter link offline (last reply "+Math.round(age/1000)+" s ago)."}else b.className="banner";
+  const bw=s.bw,bc=bw==null?"":bw>=0?"var(--bt)":"var(--warn)";
+  $("#tiles").innerHTML=tile("PV",f(s.pvw)+" W",f(s.pvv,1)+" V · "+f(s.pvi,1)+" A","var(--pv)")+
+   tile("Load",f(s.w)+" W",f(s.ld)+" %"+(s.va!=null?" · "+f(s.va)+" VA":""),"var(--ld)")+
+   tile("Battery",f(s.soc)+" %",f(s.bv,2)+" V")+
+   tile("Battery power",(bw>0?"+":"")+f(bw)+" W",(s.bi!=null?(s.bi>0?"+":"")+f(s.bi,1)+" A":"")+(bw==null?"":bw>=0?" charging":" discharging"),bc)+
+   tile("Grid",f(s.gv,1)+" V",f(s.gf,1)+" Hz")+tile("Output",f(s.ov,1)+" V",f(s.of,1)+" Hz")+
+   tile("Heat sink",s.tmp==null?"-":f(s.tmp)+" °C",s.bus!=null?"bus "+f(s.bus)+" V":"")+tile("Upload queue",s.q==null?"-":String(s.q),"minutes waiting");
+  $("#etiles").innerHTML=tile("PV",kwh(s.epv),"","var(--pv)")+tile("Load",kwh(s.eld),"","var(--ld)")+tile("Grid (est.)",kwh(s.egr),"")+
+   tile("Battery in",kwh(s.ech),"")+tile("Battery out",kwh(s.edis),"")+tile("PV (inverter)",kwh(s.epvi),s.etot!=null?"lifetime "+f(s.etot,1)+" kWh":"");
+  const w=[];if(s.wf){const a1=s.wf[1]==="1";for(let i=0;i<Math.min(31,s.wf.length);i++)if(s.wf[i]==="1")w.push("a"+i+" "+(QPIWS[i]||"bit"))}
+  if(s.wc)w.push("REVO warning "+s.wc+": "+(REVO_W[s.wc]||"?"));if(s.fc)w.push("Fault "+s.fc+": "+(REVO_F[s.fc]||LCD_F[s.fc]||"?")+" (check table on the LCD)");
+  $("#warn").innerHTML=w.length?w.map(x=>`<span class="chip">${esc(x)}</span>`).join(""):"none"}
+
+// ---- charts (canvas, no libraries)
+function plot(cv,t,series,opt={}){const dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const g=cv.getContext("2d");g.scale(dpr,dpr);g.clearRect(0,0,W,H);const css=getComputedStyle(document.documentElement);
+  const L=40,R=opt.right?40:8,T=8,B=20,pw=W-L-R,ph=H-T-B;if(!t.length){g.fillStyle=css.getPropertyValue("--mut");g.fillText("no data",L+4,T+14);return}
+  const t0=t[0],t1=t[t.length-1]||t0+1;const X=v=>L+(v-t0)/((t1-t0)||1)*pw;
+  const axis=(ss)=>{let lo=Infinity,hi=-Infinity;ss.forEach(s=>s.d.forEach(v=>{if(v!=null&&!isNaN(v)){lo=Math.min(lo,v);hi=Math.max(hi,v)}}));
+    if(lo===Infinity){lo=0;hi=1}if(opt.zero&&lo>0)lo=0;if(hi===lo)hi=lo+1;return[lo,hi]};
+  const left=series.filter(s=>!s.right),right=series.filter(s=>s.right);const[la,lb]=axis(left);const[ra,rb]=right.length?axis(right):[0,1];
+  g.strokeStyle=css.getPropertyValue("--line");g.fillStyle=css.getPropertyValue("--mut");g.font="11px sans-serif";g.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=T+ph*i/4;g.beginPath();g.moveTo(L,y);g.lineTo(L+pw,y);g.stroke();
+    g.fillText(Math.round(lb-(lb-la)*i/4),2,y+4);if(right.length)g.fillText((rb-(rb-ra)*i/4).toFixed(1),L+pw+4,y+4)}
+  const span=t1-t0,maxL=Math.max(2,Math.floor(pw/48)),steps=[600,1800,3600,7200,10800,21600,43200];let step=steps[steps.length-1];for(const s of steps)if(span/s<=maxL){step=s;break}
+  for(let v=Math.ceil(t0/step)*step;v<=t1;v+=step){const x=X(v);g.fillText(opt.rel?Math.round((v-t1)/60)+"m":localHM(v),x-14,H-5)}
+  series.forEach(s=>{const[a,b]=s.right?[ra,rb]:[la,lb];g.strokeStyle=css.getPropertyValue(s.c);g.lineWidth=1.6;g.beginPath();let pen=false;
+    s.d.forEach((v,i)=>{if(v==null||isNaN(v)){pen=false;return}const x=X(t[i]),y=T+ph-(v-a)/(b-a)*ph;pen?g.lineTo(x,y):g.moveTo(x,y);pen=true});g.stroke()})}
+async function chart(){const r=await api("/api/ring?min="+st.range+"&step="+(st.range>720?60:30));if(!r.ok)return;const j=r.j;
+  plot($("#c1"),j.t,[{d:j.pvw,c:"--pv"},{d:j.w,c:"--ld"},{d:j.bw,c:"--bt"}],{rel:j.rel,zero:true});
+  plot($("#c2"),j.t,[{d:j.soc,c:"--soc"},{d:j.bv,c:"--bt",right:true}],{rel:j.rel,right:true})}
+$$("[data-r]").forEach(b=>b.onclick=()=>{st.range=+b.dataset.r;$$("[data-r]").forEach(x=>x.classList.toggle("p",x===b));chart()});
+
+// ---- history
+async function hist(){const d=$("#hdate").value;const r=await api("/api/hist"+(d?"?date="+d:""));if(!r.ok){$("#hsum").textContent=r.j.msg||"error";return}
+  const j=r.j,sum=a=>a.reduce((x,v)=>x+(v||0),0);$("#hdate").value=j.date;
+  $("#hsum").textContent=`${j.date}: ${j.n} minutes (${j.uploaded} uploaded) · PV ${(sum(j.epv)/1000).toFixed(2)} kWh · load ${(sum(j.eld)/1000).toFixed(2)} kWh · grid ${(sum(j.egr)/1000).toFixed(2)} kWh (est.)`;
+  plot($("#c3"),j.t,[{d:j.pvw,c:"--pv"},{d:j.w,c:"--ld"}],{zero:true});
+  const ds=await api("/api/days");if(ds.ok)$("#hdays").innerHTML=ds.j.days.map(x=>`<span class="chip">${x.date} · ${x.n}</span>`).join("")}
+$("#hload").onclick=hist;
+
+// ---- diagnostics
+function setStep(id,cls){const e=$(id);e.classList.remove("done","cur");if(cls)e.classList.add(cls)}
+async function diag(){const s=await api("/api/status");if(s.ok){const x=s.j;
+  $("#lstat").innerHTML=`<span class="chip">${x.armed?"<b class=ok>ARMED</b>":"<b>NOT armed</b> - GPIO17 high-Z"}</span><span class="chip">engine: ${esc(x.engine)}</span>`+
+   `<span class="chip">${esc(x.link)}</span><span class="chip">dialect: ${esc(x.dia||"-")}</span><span class="chip">RO GPIO${x.roPin} · DI GPIO${x.diPin}${x.selfId?"":" (self-ID pending)"}</span>`+
+   (x.pollPct!=null?`<span class="chip">poll ok ${x.pollPct}%</span>`:"")+(x.safe?`<span class="chip bad">SAFE MODE</span>`:"");
+  $("#sys").innerHTML=esc(JSON.stringify(x)).replace(/,/g,", ");setStep("#s4",x.armed?(x.engine==="run"?"done":"cur"):"")}
+  const r=await api("/api/diag/pins");if(!r.ok){$("#rself").textContent=r.status==401?"enter the admin password above":"";return}
+  const d=r.j;$("#pwst").textContent="ok";$("#pwst").className="ok";
+  $("#rself").innerHTML=`<b>${esc(d.selfId.verdict)}</b> ${esc(d.selfId.msg||"")}`;$("#rloop").textContent=d.loopback.ran?d.loopback.detail:"";
+  setStep("#s1",d.selfIdDone?"done":"cur");
+  const tb=$("#itab tbody");tb.innerHTML=d.idle.sort((a,b)=>b.seq-a.seq).map(x=>`<tr><td>${x.rj}</td><td>${x.ref==="3v3"?"3V3":"GND"}</td><td>${x.pctLow}</td><td>${x.edges}</td><td class="${x.verdict==="inverter-TX"||x.verdict==="below-3V3"?"ok":x.verdict==="ABOVE-3V3"?"bad":""}">${esc(x.verdict)}</td></tr>`).join("");
+  if(d.arm.upperPin)$("#updet").open=true;
+  $("#iarm").textContent=d.arm.reason||"";const prog=$("#iprog");
+  if(d.busy){prog.style.display="block";prog.value=Math.min(100,100*(d.elapsedMs||0)/(d.expectMs||10000))}else prog.style.display="none";
+  $$("#bi1,#bi2,#bu1,#bu2,#bself").forEach(b=>b.disabled=d.busy||d.armed);
+  st.armPin=d.arm.ready?d.arm.rxRj:0;$("#rxpin").textContent=st.armPin?"RJ45 pin "+st.armPin+" (inverter RX)":"?";
+  $("#armtxt").textContent=d.armed?"Link is armed.":d.arm.ready?`Inverter TX = RJ45 pin ${d.arm.txRj}: module A+ there, B- back on pin 8 + P5 (3V3 jumper removed). Now wire GPIO17 to RJ45 pin ${d.arm.rxRj}. Arming first re-checks GPIO17 (must read LOW).`:d.arm.upperPin?`Do step 2b on pin ${d.arm.upperPin} (twice) before wiring GPIO17.`:"Complete step 2 first.";
+  setStep("#s2",d.arm.ready||d.armed?"done":d.selfIdDone?"cur":"");setStep("#s3",d.armed?"done":d.arm.ready?"cur":"");
+  updArm(d.armed);if(d.lastMsg&&d.seq!==st.diagSeq){st.diagSeq=d.seq;$("#rarm").textContent=d.lastMsg}
+  const p=await api("/api/probe");if(p.ok&&p.j){$("#psum").innerHTML=p.j.summary?`<b class="${p.j.ok?"ok":"bad"}">${esc(p.j.summary)}</b>`:"";$("#plog").textContent=p.j.log||p.j.summary||"-"}
+  if(d.busy)setTimeout(diag,700)}
+function updArm(armed){const all=$$(".ac").every(c=>c.checked);$("#barm").disabled=armed||!st.armPin||!all}
+$$(".ac").forEach(c=>c.onchange=()=>updArm(false));
+async function act(p,form,out){const r=await api(p,{method:"POST",form:form||{}});if(out)$(out).textContent=(r.j&&r.j.msg)||("HTTP "+r.status);setTimeout(diag,400)}
+$("#pwsave").onclick=()=>{st.pw=$("#pw").value;try{sessionStorage.setItem("pw",st.pw)}catch(e){}diag()};
+$("#bself").onclick=()=>act("/api/diag/selftest",{},"#rself");
+$("#bloop").onclick=()=>{if(!$("#lbok").checked){$("#rloop").textContent="tick the confirmation first";return}act("/api/diag/loopback?bench=1",{bench:1},"#rloop")};
+$("#bi1").onclick=()=>act("/api/diag/idle?pin=1",{pin:1},"#iarm");$("#bi2").onclick=()=>act("/api/diag/idle?pin=2",{pin:2},"#iarm");
+$("#bu1").onclick=()=>act("/api/diag/idle?pin=1&ref=3v3",{pin:1,ref:"3v3"},"#iarm");$("#bu2").onclick=()=>act("/api/diag/idle?pin=2&ref=3v3",{pin:2,ref:"3v3"},"#iarm");
+$("#barm").onclick=()=>{if(confirm("GPIO17 is wired to RJ45 pin "+st.armPin+" only? This enables transmitting read-only queries."))act("/api/link/arm",{pin:st.armPin,confirm:"ARM"},"#rarm")};
+$("#bprobe").onclick=()=>act("/api/probe",{},"#psum");let cap=false;$("#bcap").onclick=()=>{cap=!cap;$("#bcap").textContent="Raw capture "+(cap?"off":"on");act("/api/capture",{on:cap?1:0},"#psum")};
+$("#breset").onclick=()=>{if(confirm("Disarm the link and forget the idle/probe results?"))act("/api/link/reset",{},"#rreset")};
+$("#bresetall").onclick=()=>{if(confirm("Also forget the module self-ID?"))act("/api/link/reset",{all:1},"#rreset")};
+
+// ---- raw + identity
+async function raw(){const r=await api("/api/raw");if(r.ok)$("#rawt tbody").innerHTML=r.j.last.map(x=>`<tr><td>${esc(x.cmd)}</td><td>${esc(x.res)}</td><td>${x.ageS}s</td><td class="mono">${esc(x.text)}</td></tr>`).join("")||"<tr><td colspan=4>no replies yet</td></tr>";
+  const i=await api("/api/identity");if(i.ok)$("#ident").textContent=JSON.stringify(i.j,null,1)}
+$("#rawr").onclick=raw;
+
+// ---- settings
+const CF=[["socLow","Battery low SOC %",5,80],["bvLow","Battery low V",20,30],["bvHigh","Battery high V",26,34],["tempHigh","Heat-sink high °C",40,100],
+["loadHigh","Load high %",50,120],["notifyRepeatMin","Repeat (min)",5,1440],["quietFrom","Quiet from (h)",0,23],["quietTo","Quiet to (h)",0,23],["summaryHour","Daily summary hour (-1 off)",-1,23]];
+async function settings(){const r=await api("/api/config");if(!r.ok){$("#cfgr").textContent=r.status==401?"enter the admin password on the Diagnostics tab":"";return}
+  $("#cfgf").innerHTML=CF.map(c=>`<label>${c[1]}<br><input name="${c[0]}" type="number" step="any" min="${c[2]}" max="${c[3]}" value="${r.j[c[0]]}"></label>`).join("")+
+  `<p class="mut" style="font-size:12px">Cloud ${r.j.cloudSet?"configured":"not set"} · ntfy ${r.j.ntfySet?"set":"not set"} · Telegram ${r.j.telegramSet?"set":"not set"}${r.j.adminDefault?" · <b class=bad>admin password is still the default</b>":""}</p>`;
+  const s=await api("/api/status");if(s.ok)$("#sys").innerHTML=esc(JSON.stringify(s.j)).replace(/,/g,", ")}
+$("#cfgs").onclick=async()=>{const fd={};new FormData($("#cfgf")).forEach((v,k)=>fd[k]=v);const r=await api("/api/config",{method:"POST",form:fd});$("#cfgr").textContent=r.j.msg||r.status};
+$("#npws").onclick=async()=>{const v=$("#npw").value;if(v.length<6){$("#npwr").textContent="min 6 chars";return}
+  const r=await api("/api/config",{method:"POST",form:{adminpw:v}});if(r.ok){st.pw=v;try{sessionStorage.setItem("pw",v)}catch(e){}}$("#npwr").textContent=r.j.msg||r.status};
+$("#breboot").onclick=()=>{if(confirm("Reboot the logger?"))api("/api/reboot",{method:"POST",form:{}})};
+
+// ---- router
+function show(){const t=(location.hash||"#live").slice(1);st.tab=t;$$("section").forEach(s=>s.classList.toggle("on",s.id===t));
+  $$("nav a").forEach(a=>a.classList.toggle("on",a.getAttribute("href")==="#"+t));
+  if(t==="chart")chart();if(t==="hist")hist();if(t==="diag")diag();if(t==="raw")raw();if(t==="set")settings()}
+window.addEventListener("hashchange",show);$("#pw").value=st.pw;show();live();
+setInterval(()=>{if(document.hidden)return;live();if(st.tab==="chart")chart();if(st.tab==="diag")diag()},5000);
+</script>
+</body>
+</html>

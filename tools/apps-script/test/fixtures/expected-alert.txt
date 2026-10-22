@@ -1,0 +1,18 @@
+Daily grid usage > 5 kWh: now 5.01 kWh (limit 5.00 kWh today, est.)
+
+When: Wed 21 Oct 2026, 18:42 (Asia/Dhaka)
+Severity: Warning | rule r03
+Value: 5.01 kWh, limit 5.00 kWh [Grid energy, today, est.]
+
+Right now:
+  Battery   78 % / 26.4 V / charging 317 W
+  Solar     465 W, today 1.92 kWh
+  Load      512 W, today 2.08 kWh
+  Grid      231 V, today 0.33 kWh (est.)
+  Mode      Line (grid) mode
+  As of     Wed 21 Oct 2026, 18:42
+
+Dashboard: https://savx.example.workers.dev/#/alerts
+
+--
+Sent by the solar logger mailer (inv1). You get this because the owner added you to the alert list. To stop, ask the owner to remove you (Alerts > E-mail) or to turn the rule off. Grid figures are estimates from the inverter's readings.

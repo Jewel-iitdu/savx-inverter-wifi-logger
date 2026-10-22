@@ -1,0 +1,9 @@
+{
+  "r01": {"name":"Load > 2500 W for 5 min","on":true,"metric":"w","scope":"inst","op":"gt","value":2500,"mode":"hold",
+          "forSec":300,"clr":2200,"clrSec":120,"coolMin":60,"repeatMin":0,"maxDay":3,
+          "win":{"from":"0600","to":"2300","days":127},"sev":3,"email":true,"ntfy":true,"rc":1,"clrMail":true,"upd":1792560000000},
+  "r02": {"name":"SOC < 30 %","on":true,"metric":"soc","scope":"inst","op":"lt","value":30,"mode":"hold","forSec":60,"clr":35,
+          "sev":4,"email":true,"ntfy":true,"clrMail":true,"upd":1792560000000},
+  "r03": {"name":"Daily grid usage > 5 kWh","on":true,"metric":"egr","scope":"day","op":"gt","value":5000,"mode":"hold","forSec":0,
+          "coolMin":60,"maxDay":1,"sev":3,"email":true,"ntfy":false,"upd":1792560000000}
+}

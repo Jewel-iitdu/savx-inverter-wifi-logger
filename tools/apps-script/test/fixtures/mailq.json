@@ -1,0 +1,10 @@
+{
+  "_about": "mailq exactly as the r8 section 3.7 example, plus malformed jobs the rules would refuse.",
+  "queue": {"1792580003-r03-o":{"d":"2026-10-21","ts":1792580003,"sev":3},
+            "1792580090-r05-o":{"d":"2026-10-21","ts":1792580090,"sev":4,"rc":1,"n":2},
+            "test":{"ts":1792580100,"rid":"r03"}},
+  "malformed": {"r03-o":{"d":"2026-10-21","ts":1,"sev":3},
+                "1792580003-r03-x":{"d":"2026-10-21","ts":1,"sev":3},
+                "1792580003-r03-o":{"d":"21-10-2026","ts":1,"sev":3},
+                "1792580004-r03-o":"not an object"}
+}

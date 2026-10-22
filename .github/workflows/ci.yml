@@ -1,0 +1,181 @@
+# CI for every push to main and every pull request. Docs-only changes are skipped.
+# checks (change detection, codes.ts freshness, RTDB rules lint) -> web, firmware, mailer (only if touched).
+# research/r7-web-hosting.md section 4.2, plus the mailer job (tools/apps-script, research/r8-email-alerts.md section 5).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'docs/**', 'research/**', 'reference/**']
+  pull_request:
+    paths-ignore: ['**/*.md', 'docs/**', 'research/**', 'reference/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: changes, codes, rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.changes.outputs.web }}
+      firmware: ${{ steps.changes.outputs.firmware }}
+      mailer: ${{ steps.changes.outputs.mailer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0            # full history, so the diff base below exists
+          persist-credentials: false
+
+      - name: Detect changed areas
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          base=""
+          if [ "$EVENT" = pull_request ]; then base="origin/$BASE_REF"; fi
+          if [ "$EVENT" = push ]; then base="$BEFORE"; fi
+          if [ -z "$base" ] || ! git rev-parse --quiet --verify "${base}^{commit}" > /dev/null; then
+            echo "No usable diff base for '$EVENT': checking everything."
+            { echo "web=true"; echo "firmware=true"; echo "mailer=true"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$base"...HEAD)"
+          printf '%s\n' "$files"
+          has() { if grep -qE "$1" <<< "$files"; then echo true; else echo false; fi; }
+          {
+            echo "web=$(has '^(web/|shared/|tools/gen_codes\.py|\.github/workflows/ci\.yml)')"
+            echo "firmware=$(has '^(firmware/|shared/|\.github/workflows/ci\.yml)')"
+            echo "mailer=$(has '^(tools/apps-script/|shared/|\.github/workflows/ci\.yml)')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: web/src/codes.ts is up to date with shared/codes.json
+        run: python3 tools/gen_codes.py --check
+
+      - name: RTDB rules lint (valid JSON, placeholders kept, no open rules, renders)
+        run: |
+          rules=firebase/database.rules.json
+          python3 -m json.tool "$rules" > /dev/null
+          if ! grep -q OWNER_UID "$rules" || ! grep -q DEVICE_UID "$rules" || ! grep -q MAILER_UID "$rules"; then
+            echo "::error file=$rules::OWNER_UID / DEVICE_UID / MAILER_UID placeholders missing. Keep them in git; deploy-rules fills them in."
+            exit 1
+          fi
+          if grep -nE '"\.(read|write)"[[:space:]]*:[[:space:]]*(true|"true"|"auth != null")' "$rules"; then
+            echo "::error file=$rules::open rule (true, or a bare \"auth != null\"). See firebase/README.md."
+            exit 1
+          fi
+          if python3 -c 'import json, sys; sys.exit(0 if "database" in json.load(open("firebase.json")) else 1)'; then
+            echo "::error file=firebase.json::no database block here: rules deploy only through tools/render-rules.sh (.deploy/)"
+            exit 1
+          fi
+          OWNER_UID=ciOwnerUid0000000000000000000 DEVICE_UID=ciDeviceUid000000000000000000 MAILER_UID=ciMailerUid000000000000000000 \
+            sh tools/render-rules.sh
+          rm -rf .deploy
+
+  web:
+    name: web typecheck + build
+    needs: checks
+    if: needs.checks.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Build (no VITE_* needed; a missing Firebase config only shows the in-app setup notice)
+        run: npm run build
+
+      - name: Check dist (host files present, service-worker precache list)
+        run: |
+          for f in index.html sw.js manifest.webmanifest _headers .assetsignore; do
+            test -s "dist/$f" || { echo "::error::dist/$f missing"; exit 1; }
+          done
+          if grep -qE '"/(_headers|_redirects|index\.html|\.assetsignore)"' dist/sw.js; then
+            echo "::error::sw.js must not precache /_headers, /_redirects, /.assetsignore or /index.html (vite.config.ts)"
+            exit 1
+          fi
+          if awk 'length > 2000 { bad = 1 } END { exit !bad }' dist/_headers; then
+            echo "::error::a _headers line is longer than 2,000 characters"; exit 1
+          fi
+
+  firmware:
+    name: firmware build + native tests
+    needs: checks
+    if: needs.checks.outputs.firmware == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Cache PlatformIO platform, toolchain and libraries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.platformio/platforms
+            ~/.platformio/packages
+            firmware/.pio/libdeps
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO Core 6.2.0
+        run: python -m pip install --disable-pip-version-check "platformio==6.2.0"
+
+      - name: Build ESP32-S3 firmware (env savx)
+        run: pio run -e savx
+
+      - name: Host unit tests (env native)
+        run: pio test -e native
+
+  mailer:
+    name: mailer (Apps Script) unit tests
+    needs: checks
+    if: needs.checks.outputs.mailer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: tools/apps-script
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Parse check (Lib.gs, Code.gs, appsscript.json)
+        run: npm run check
+
+      - name: Unit tests (no dependencies; node --test)
+        run: npm test

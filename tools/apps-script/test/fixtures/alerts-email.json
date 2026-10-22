@@ -1,0 +1,9 @@
+{
+  "_about": "alerts/email exactly as the r8 section 3.2 example (plus one address only on the PWA list).",
+  "full": {"on":true,"to":"owner@gmail.com,family@gmail.com","fromName":"Solar logger","maxPerDay":40,"monthStart":1,
+           "builtin":{"minSev":4,"clear":true},"summary":{"on":true,"hour":7},"offline":{"on":true,"min":30,"clear":true}},
+  "minimal": {"on":true,"to":"owner@gmail.com"},
+  "hostile": {"on":"yes","to":"Owner@Gmail.com,owner@gmail.com,stranger@evil.example","fromName":"Solar\r\nBcc: x@y.z\tlogger","maxPerDay":400,
+              "monthStart":31,"summary":{"on":false,"hour":99},"offline":{"min":1}},
+  "allowTo": "owner@gmail.com, family@gmail.com"
+}

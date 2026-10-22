@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Solar Logger</string>
+    <string name="title_activity_main">Solar Logger</string>
+    <string name="package_name">io.github.savxlogger.solar</string>
+    <string name="custom_url_scheme">io.github.savxlogger.solar</string>
+</resources>

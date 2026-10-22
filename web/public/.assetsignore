@@ -1,0 +1,2 @@
+# Files in the assets directory that wrangler must never upload (.gitignore syntax).
+.DS_Store

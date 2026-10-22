@@ -1,0 +1,22 @@
+Your solar day - Tue 20 Oct
+
+                    Yesterday     Day before    This cycle (3 d)
+Solar (logger)      12.84 kWh     11.90 kWh     34.74 kWh
+Solar (inverter)    12.70 kWh     -             -
+Load                9.71 kWh      9.20 kWh      27.91 kWh
+Grid (est.)         1.22 kWh      0.95 kWh      3.17 kWh
+Battery charged     4.10 kWh      3.90 kWh      11.00 kWh
+Battery discharged  3.05 kWh      2.80 kWh      7.85 kWh
+Grid outage         42 min        0 min         5 h 42 min
+
+Solar share of load (est.): 87 %
+Peak load / peak solar: 1,840 W / 2,410 W
+Battery V min / max: 24.9 / 28.6 V; SOC min / max: 31 / 100 %
+Data coverage: 100 % (1440 of 1440 minutes)
+Alerts: Daily grid usage > 5 kWh x1, Grid lost x1, r01 x1
+Cycle = since 2026-10-05 (billing day 5), 3 day(s) with data.
+
+Dashboard: https://savx.example.workers.dev/#/energy
+
+--
+Sent by the solar logger mailer (inv1). You get this because the owner added you to the alert list. To stop, ask the owner to remove you (Alerts > E-mail) or to turn the rule off. Grid figures are estimates from the inverter's readings.
