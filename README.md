@@ -88,6 +88,10 @@ Two mistakes we actually made while building:
    pio test -e native               # 113 host tests
    pio run -e savx -t upload        # USB-C on the board's "COM" port
    ```
+   **No toolchain?** Download the prebuilt `…-factory.bin` from
+   [Releases](../../releases) (ESP32-S3 **N16R8** boards only)
+   and write it at address **0x0**, either with `esptool.py --chip esp32s3 write_flash 0x0 <file>.bin` or with the
+   browser flasher https://espressif.github.io/esptool-js/. Writing at 0x0 erases saved settings.
 2. **Setup portal** ([docs/05 §5](docs/05-firmware-guide.md)):
    1. On first boot the board opens the WiFi `SavxLogger-XXXX`; the password is printed on the serial console.
    2. Open http://192.168.4.1.
@@ -119,7 +123,8 @@ Two mistakes we actually made while building:
    3. Press **Start** in your bot. The logger pairs by itself.
 7. **Android app** (optional, [android-app/README](android-app/README.md)): set `server.url` in
    `capacitor.config.json` to your dashboard URL, then `npm run apk`.
-8. **Updates:** build, then upload `firmware.bin` at `http://<logger-ip>/update`.
+8. **Updates:** build, then upload `firmware.bin` at `http://<logger-ip>/update`. Or upload the release's `…-ota.bin`
+   there. Settings are kept.
 
 [docs/00](docs/00-plan-overview.md) is the full plan. [docs/08](docs/08-risks-troubleshooting-maintenance.md)
 covers troubleshooting.
