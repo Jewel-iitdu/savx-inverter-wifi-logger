@@ -175,6 +175,7 @@ size_t statusJson(const StatusDoc& s, char* out, size_t n) {
   if (s.meter[0]) j.s("meter", s.meter);
   if (s.ota[0]) j.s("ota", s.ota);
   if (s.repo[0]) j.s("repo", s.repo);
+  if (s.otachk[0]) j.s("otachk", s.otachk);
   j.close();
   return j.ok() ? j.len() : 0;
 }

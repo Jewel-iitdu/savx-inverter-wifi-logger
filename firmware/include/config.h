@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.9.5"
+#define FW_VERSION "0.9.7"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -189,5 +189,6 @@ constexpr uint32_t OTA_TLS_TIMEOUT_S = 15;
 constexpr int32_t OTA_CONNECT_MS = 10000;
 constexpr uint32_t OTA_IO_MS = 20000;               // no data for this long: give up
 constexpr uint32_t OTA_TOTAL_MS = 5UL * 60000UL;
+constexpr uint32_t OTA_PROBE_AFTER_MS = 60000;      // 0.9.6: check the GitHub path once, a minute after boot
 
 }  // namespace cfg

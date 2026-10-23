@@ -16,8 +16,9 @@
 #include "net/OtaPlan.h"
 #include "store/Settings.h"
 
-// The Mozilla root list (tools/gen-ca-bundle.sh -> firmware/x509_crt_bundle, board_build.embed_files): GitHub's
-// download host has changed CAs before, so no pinned roots here.
+// ESP-IDF's own full Mozilla root bundle (libmbedtls x509_crt_bundle.S, CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL):
+// GitHub's download host has changed CAs before, so no pinned roots here. 0.9.2-0.9.5 embedded a bundle made with the
+// Arduino generator; IDF 5.5 reads a newer layout (an offset table first), so every GitHub handshake failed (-1).
 extern const uint8_t caBundleStart[] asm("_binary_x509_crt_bundle_start");
 extern const uint8_t caBundleEnd[] asm("_binary_x509_crt_bundle_end");
 
@@ -30,6 +31,7 @@ namespace {
 
 RtosLock lock_;
 char status_[48] = "";
+char check_[48] = "";   // the boot check of the GitHub download path (status.otachk)
 char repo_[84] = "";
 uint32_t handled_ = 0;
 bool probation_ = false;
@@ -55,6 +57,58 @@ bool fail(HTTPClient& http, const char* fmt, ...) {
   return false;
 }
 
+void prep(NetworkClientSecure& cli, HTTPClient& http) {
+  cli.setCACertBundle(caBundleStart, (size_t)(caBundleEnd - caBundleStart));
+  cli.setHandshakeTimeout(cfg::OTA_TLS_TIMEOUT_S);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // github.com -> its release-assets host
+  http.setConnectTimeout(cfg::OTA_CONNECT_MS);
+  http.setTimeout(cfg::OTA_IO_MS);
+  http.setUserAgent("savx-logger/" FW_VERSION);
+}
+
+// GET a small text file (SHA256SUMS.txt) into out. A failed connection (TLS) is retried once; err gets the HTTP code
+// or the connection and mbedTLS error codes (e.g. "conn -1 tls -0x2700": certificate not verified).
+bool getText(NetworkClientSecure& cli, HTTPClient& http, const String& url, char* out, size_t cap, size_t& n, int& code,
+             char* err, size_t errN) {
+  n = 0;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    if (!http.begin(cli, url)) {
+      snprintf(err, errN, "bad URL");
+      return false;
+    }
+    code = http.GET();
+    if (code == 200) {
+      NetworkClient* s = http.getStreamPtr();
+      uint32_t t0 = millis();
+      int want = http.getSize();
+      while (n < cap - 1 && (want < 0 || (int)n < want) && millis() - t0 < cfg::OTA_IO_MS) {
+        int a = s->available();
+        if (a <= 0) {
+          if (!http.connected()) break;
+          delay(5);
+          continue;
+        }
+        int r = s->read((uint8_t*)out + n, min((size_t)a, cap - 1 - n));
+        if (r > 0) n += (size_t)r;
+      }
+      out[n] = 0;
+      http.end();
+      return true;
+    }
+    char eb[64];
+    int le = cli.lastError(eb, sizeof eb);
+    http.end();
+    if (code > 0) {
+      snprintf(err, errN, "HTTP %d", code);
+      return false;
+    }
+    snprintf(err, errN, "conn %d tls -0x%04x", code, (unsigned)(le < 0 ? -le : le));
+    Serial.printf("[ota] %s: %s (%s)\n", url.c_str(), err, eb);
+    delay(3000);
+  }
+  return false;
+}
+
 }  // namespace
 
 void setStatus(const char* fmt, ...) {
@@ -68,6 +122,38 @@ void setStatus(const char* fmt, ...) {
 void status(char* out, size_t cap) {
   LockGuard g(&lock_);
   snprintf(out, cap, "%s", status_);
+}
+
+void check(char* out, size_t cap) {
+  LockGuard g(&lock_);
+  snprintf(out, cap, "%s", check_);
+}
+
+void probe() {
+  if (!repo_[0] || !ota::heapOk(ESP.getMaxAllocHeap(), ESP.getFreeHeap())) return;
+  esp_task_wdt_delete(nullptr);
+  NetworkClientSecure cli;
+  HTTPClient http;
+  prep(cli, http);
+  char sums[640], err[40];
+  size_t n;
+  int code;
+  // GitHub redirects .../releases/latest/download/<file> to the newest release's file
+  String url = String("https://github.com/") + repo_ + "/releases/latest/download/SHA256SUMS.txt";
+  char res[48];
+  if (getText(cli, http, url, sums, sizeof sums, n, code, err, sizeof err)) {
+    char v[16] = "?";
+    ota::versionInSums(sums, n, v, sizeof v);
+    snprintf(res, sizeof res, "GitHub ok, latest %s", v);
+  } else {
+    snprintf(res, sizeof res, "GitHub failed: %s", err);
+  }
+  esp_task_wdt_add(nullptr);
+  {
+    LockGuard g(&lock_);
+    snprintf(check_, sizeof check_, "%s", res);
+  }
+  Serial.printf("[ota] check: %s (heap block %u)\n", res, (unsigned)ESP.getMaxAllocHeap());
 }
 
 const char* repo() { return repo_; }
@@ -151,40 +237,19 @@ bool run(uint32_t code) {
   } rewd;
 
   NetworkClientSecure cli;
-  cli.setCACertBundle(caBundleStart, (size_t)(caBundleEnd - caBundleStart));
-  cli.setHandshakeTimeout(cfg::OTA_TLS_TIMEOUT_S);
   HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // github.com -> its release-assets host
-  http.setConnectTimeout(cfg::OTA_CONNECT_MS);
-  http.setTimeout(cfg::OTA_IO_MS);
-  http.setUserAgent("savx-logger/" FW_VERSION);
+  prep(cli, http);
 
   // 1. the release's SHA256SUMS.txt
   setStatus("checking release %s", v);
   ota::releasePath(path, sizeof path, repo_, code, "SHA256SUMS.txt");
-  if (!http.begin(cli, String("https://github.com") + path)) return fail(http, "bad URL");
-  int st = http.GET();
-  if (st == 404) return fail(http, "no release v%s", v);
-  if (st != 200) return fail(http, "checksums HTTP %d", st);
-  char sums[640];
+  char sums[640], err[40];
   size_t sn = 0;
-  {
-    NetworkClient* s = http.getStreamPtr();
-    uint32_t t0 = millis();
-    int want = http.getSize();
-    while (sn < sizeof sums - 1 && (want < 0 || (int)sn < want) && millis() - t0 < cfg::OTA_IO_MS) {
-      int a = s->available();
-      if (a <= 0) {
-        if (!http.connected()) break;
-        delay(5);
-        continue;
-      }
-      int r = s->read((uint8_t*)sums + sn, min((size_t)a, sizeof sums - 1 - sn));
-      if (r > 0) sn += (size_t)r;
-    }
+  int st = 0;
+  if (!getText(cli, http, String("https://github.com") + path, sums, sizeof sums, sn, st, err, sizeof err)) {
+    if (st == 404) return fail(http, "no release v%s", v);
+    return fail(http, "checksums %s", err);
   }
-  sums[sn] = 0;
-  http.end();
   uint8_t want[32];
   ota::imageName(code, file, sizeof file);
   if (!ota::parseSums(sums, sn, file, want)) return fail(http, "%s not in checksums", file);
@@ -194,7 +259,11 @@ bool run(uint32_t code) {
   ota::releasePath(path, sizeof path, repo_, code, file);
   if (!http.begin(cli, String("https://github.com") + path)) return fail(http, "bad URL");
   st = http.GET();
-  if (st != 200) return fail(http, "image HTTP %d", st);
+  if (st != 200) {
+    char eb[64];
+    int le = cli.lastError(eb, sizeof eb);
+    return fail(http, "image %d tls -0x%04x", st, (unsigned)(le < 0 ? -le : le));
+  }
   int len = http.getSize();
   const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
   if (len <= 0 || !next || (uint32_t)len > next->size) return fail(http, "image size %d", len);

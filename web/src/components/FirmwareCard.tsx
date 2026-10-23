@@ -21,8 +21,21 @@ interface Release {
 }
 
 const BUSY = /^(checking release|downloading|installed)/;
+/** A request older than this with no news from the logger may be sent again. */
+const PENDING_MS = 15 * 60 * 1000;
 
-export function FirmwareCard({ status, fw }: { status: Status | null | undefined; fw: string | undefined }) {
+export function FirmwareCard({
+  status,
+  fw,
+  reqOta,
+  reqAt,
+}: {
+  status: Status | null | undefined;
+  fw: string | undefined;
+  /** cfg.ota / cfg.otaAt: the last update request (shared by every device, survives a reload). */
+  reqOta: number | undefined;
+  reqAt: number | undefined;
+}) {
   const { source } = useApp();
   const repo = status?.repo ?? '';
   const rel = useAsync<Release | null>(
@@ -37,6 +50,10 @@ export function FirmwareCard({ status, fw }: { status: Status | null | undefined
   const ver = rel.data?.tag_name.replace(/^v/, '') ?? '';
   const busy = BUSY.test(status?.ota ?? '');
   const newer = !!repo && latest > have && have > 0;
+  // Requested and not installed yet: the button stays off until the logger reports a failure (after the request) or
+  // the request is old enough to send again.
+  const failedSince = /failed/.test(status?.ota ?? '') && (status?.ts ?? 0) * 1000 > (reqAt ?? 0);
+  const pending = !!reqOta && reqOta >= latest && latest > have && Date.now() - (reqAt ?? 0) < PENDING_MS && !failedSince;
 
   const request = async () => {
     if (!window.confirm(t('fw.confirm', { v: ver }))) return;
@@ -74,12 +91,13 @@ export function FirmwareCard({ status, fw }: { status: Status | null | undefined
                 ),
               ],
               [t('fw.state'), status?.ota ?? '–'],
+              ...(status?.otachk ? ([[t('fw.check'), status.otachk]] as Array<[string, string]>) : []),
             ]}
           />
           {newer ? (
             <div class="actions">
-              <button type="button" class="btn" disabled={saving || busy} onClick={() => void request()}>
-                {t('fw.update', { v: ver })}
+              <button type="button" class="btn" disabled={saving || busy || pending} onClick={() => void request()}>
+                {pending || busy ? t('fw.requestedBtn') : t('fw.update', { v: ver })}
               </button>
             </div>
           ) : (

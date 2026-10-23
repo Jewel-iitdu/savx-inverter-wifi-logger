@@ -25,6 +25,9 @@ void imageName(uint32_t code, char* out, size_t cap);
 // The SHA-256 of `file` in a sha256sum listing ("<64 hex>  <file>" lines); false if absent or malformed.
 bool parseSums(const char* text, size_t n, const char* file, uint8_t sha[32]);
 
+// The version of the OTA image listed in a SHA256SUMS.txt ("savx-logger-<ver>-ota.bin"); false if there is none.
+bool versionInSums(const char* text, size_t n, char* ver, size_t cap);
+
 enum class Go : uint8_t { NONE, START, NOT_NEWER, NO_REPO };
 // A request (code, at) is handled once: `handledAt` is the request time of the last one acted on.
 Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt, bool repoSet);

@@ -16,6 +16,10 @@ uint32_t handledAt();               // cfg.otaAt of the last request acted on
 void setHandled(uint32_t at);
 void setStatus(const char* fmt, ...);
 void status(char* out, size_t cap); // short state for status.ota and /api/status ("" = nothing yet)
+// 0.9.6: once per boot, read the latest release's SHA256SUMS.txt over the same path as an update (status.otachk:
+// "GitHub ok, latest 0.9.7" or the HTTP / TLS error). The uplink connection must be dropped first.
+void probe();
+void check(char* out, size_t cap);
 
 // Download, check and install release `code`. true: installed, the caller writes the status and restarts.
 // false: nothing installed (status says why). Blocks ~0.5-2 min; the uplink connection must be dropped first.

@@ -78,6 +78,7 @@ uint32_t accHs_ = 0, accRq_ = 0;
 mrec::Daily fin_;
 bool finHave_ = false;
 uint32_t otaReq_ = 0;       // 0.9.2: a remote update to run (version code)
+bool otaProbed_ = false;    // 0.9.6: the GitHub download path was checked this boot
 bool meterFinHave_ = false;  // 0.9.0 grid meter: a finished day's metered energy to write
 int32_t meterFinDay_ = 0, meterFinWh_ = -1;
 Prune prune_ = Prune::IDLE;
@@ -361,6 +362,7 @@ size_t buildStatus(char* out, size_t cap, uint32_t ep) {
   s.qg = budget.level();
   snprintf(s.ruleErr, sizeof s.ruleErr, "%s", st_.ruleErr[0] ? st_.ruleErr : ri.err);
   rota::status(s.ota, sizeof s.ota);
+  rota::check(s.otachk, sizeof s.otachk);
   if (strlen(rota::repo()) < sizeof s.repo) snprintf(s.repo, sizeof s.repo, "%s", rota::repo());
   meter::Snap ms = meter::snap();
   if (ms.configured || !ms.enabled) {
@@ -841,7 +843,14 @@ void loop() {
   if (ops < 3) step(doMtd(millis()));
   if (ops < 3) step(doDiag(millis()));
   if (ops < 3) step(doPrune(millis(), ep, today));
-  if (otaReq_) runOta();
+  if (otaReq_) {
+    runOta();
+  } else if (!otaProbed_ && st_.lastCloudOkEpoch && millis() > cfg::OTA_PROBE_AFTER_MS && rota::repo()[0]) {
+    otaProbed_ = true;  // 0.9.6: once per boot, the same TLS path as an update (one session at a time)
+    fb.drop();
+    rota::probe();
+    tStatus_ = millis() - cfg::STATUS_MS;
+  }
   opsEvents(millis(), ep, today);
   compactPend();
 }

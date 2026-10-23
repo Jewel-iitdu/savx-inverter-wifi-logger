@@ -60,6 +60,7 @@ struct StatusDoc {
   char meter[41] = "";    // 0.9.0 grid meter state, e.g. "ok 3.4 2 s" ("" omitted: not set up)
   char ota[41] = "";      // 0.9.2 remote update state, e.g. "updated to 0.9.3" ("" omitted)
   char repo[41] = "";     // 0.9.2 releases repo for remote updates ("" omitted: off)
+  char otachk[41] = "";   // 0.9.6 boot check of the GitHub download path ("GitHub ok, latest 0.9.7")
 };
 size_t statusJson(const StatusDoc& s, char* out, size_t n);
 

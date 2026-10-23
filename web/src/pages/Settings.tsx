@@ -187,7 +187,7 @@ export function SettingsPage() {
         {meterMsg && <Banner tone={meterMsg.tone}>{meterMsg.text}</Banner>}
       </Card>
 
-      <FirmwareCard status={status.value} fw={status.value?.fw ?? meta?.fwver} />
+      <FirmwareCard status={status.value} fw={status.value?.fw ?? meta?.fwver} reqOta={cfgSub.value?.ota} reqAt={cfgSub.value?.otaAt} />
 
       <Card title={t('set.actions')}>
         <div class="actions">

@@ -91,6 +91,7 @@ export interface Status {
   meter?: string;
   ota?: string; // fw 0.9.2: remote firmware update state ("updated to 0.9.3", "downloading 0.9.3: 40%", "failed: …")
   repo?: string; // fw 0.9.2: GitHub repo whose releases the logger installs (absent: remote update off)
+  otachk?: string; // fw 0.9.6: the logger's own check of the GitHub download path after boot ("GitHub ok, latest 0.9.7")
 }
 
 /** /devices/inv1/meta — flat, boot and on change. */

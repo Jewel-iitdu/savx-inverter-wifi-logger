@@ -277,6 +277,8 @@ static void hStatus() {
     j.openObj("ota");
     j.s("repo", rota::repo());
     j.s("state", os);
+    rota::check(os, sizeof os);
+    j.s("check", os);
     j.b("probation", rota::inProbation());
     j.close();
   }

@@ -80,6 +80,35 @@ bool parseSums(const char* text, size_t n, const char* file, uint8_t sha[32]) {
   return false;
 }
 
+bool versionInSums(const char* text, size_t n, char* ver, size_t cap) {
+  static const char PRE[] = "savx-logger-", SUF[] = "-ota.bin";
+  size_t i = 0;
+  while (i < n) {  // line by line: the factory image's line comes first and must not be read across
+    size_t e = i;
+    while (e < n && text[e] != '\n') e++;
+    size_t len = e - i;
+    if (len && text[e - 1] == '\r') len--;
+    for (size_t k = i; k + sizeof PRE - 1 <= i + len; k++) {
+      if (memcmp(text + k, PRE, sizeof PRE - 1)) continue;
+      const char* v = text + k + sizeof PRE - 1;
+      size_t vl = i + len - (size_t)(v - text);
+      if (vl > sizeof SUF - 1 && !memcmp(v + vl - (sizeof SUF - 1), SUF, sizeof SUF - 1)) {
+        vl -= sizeof SUF - 1;
+        char tmp[16];
+        if (vl == 0 || vl >= sizeof tmp) break;
+        memcpy(tmp, v, vl);
+        tmp[vl] = 0;
+        if (!versionCode(tmp)) break;
+        snprintf(ver, cap, "%s", tmp);
+        return true;
+      }
+      break;
+    }
+    i = e + 1;
+  }
+  return false;
+}
+
 Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt, bool repoSet) {
   if (!reqCode || !reqAt || reqAt == handledAt) return Go::NONE;
   if (reqCode <= ownCode) return Go::NOT_NEWER;

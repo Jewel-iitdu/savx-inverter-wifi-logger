@@ -64,6 +64,19 @@ void test_parse_sums() {
   TEST_ASSERT_FALSE(ota::parseSums(bad, strlen(bad), "savx-logger-0.9.1-ota.bin", sha));
 }
 
+// 0.9.7: 0.9.6's boot check showed "GitHub ok, latest ?": the factory image's line comes first in the listing and
+// the version was read across two lines.
+void test_version_in_sums() {
+  char v[16] = "";
+  TEST_ASSERT_TRUE(ota::versionInSums(SUMS, strlen(SUMS), v, sizeof v));
+  TEST_ASSERT_EQUAL_STRING("0.9.1", v);
+  const char* crlf = "3df13da042035eee3f07a10b9e380dd10bb46607d90c9dd77dc99c4f1a54524e  savx-logger-1.2.10-ota.bin\r\n";
+  TEST_ASSERT_TRUE(ota::versionInSums(crlf, strlen(crlf), v, sizeof v));
+  TEST_ASSERT_EQUAL_STRING("1.2.10", v);
+  const char* none = "5f0f  savx-logger-0.9.1-esp32s3-n16r8-factory.bin\n";
+  TEST_ASSERT_FALSE(ota::versionInSums(none, strlen(none), v, sizeof v));
+}
+
 void test_decide_once_and_only_newer() {
   using ota::Go;
   TEST_ASSERT_EQUAL_INT((int)Go::START, (int)ota::decide(903, 5, 902, 0, true));
@@ -113,6 +126,7 @@ int main(int, char**) {
   RUN_TEST(test_version_codes);
   RUN_TEST(test_repo_and_paths);
   RUN_TEST(test_parse_sums);
+  RUN_TEST(test_version_in_sums);
   RUN_TEST(test_decide_once_and_only_newer);
   RUN_TEST(test_heap_gate_accepts_the_owners_logger);
   RUN_TEST(test_probation);
