@@ -23,12 +23,12 @@ void NotifyGates::roll(uint32_t epoch) {
   }
 }
 
-uint8_t NotifyGates::pushPrio(uint8_t sev, bool clear, uint32_t epoch, bool force) {
+uint8_t NotifyGates::pushPrio(uint8_t sev, bool clear, uint32_t epoch, bool force, bool noQuiet) {
   roll(epoch);
   uint8_t prio = sev >= 5 ? 5 : sev == 4 ? 4 : sev == 3 ? 3 : 2;
   if (clear && prio > 3) prio = 3;
   bool push = true;
-  if (!force && prio <= 3 && quiet(epoch)) push = false;                       // quiet hours (sev <= 3, clears)
+  if (!force && !noQuiet && prio <= 3 && quiet(epoch)) push = false;           // quiet hours (sev <= 3, clears)
   if (!force && pushes_ >= cfg::PUSH_CAP_PER_DAY && sev < 5) push = false;     // global daily cap
   if (!push) return 0;
   pushes_++;

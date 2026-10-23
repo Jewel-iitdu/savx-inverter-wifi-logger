@@ -22,7 +22,8 @@ struct AlertCfg {
   int summaryHour = 21;  // -1 disables DAILY_SUMMARY
   uint32_t testAlert = 0, reprobe = 0;
   // 0.7.9 (appended: older NVS blobs load as a prefix): the owner's daily planned grid-off, local minutes 0..1439,
-  // -1 = none. A grid loss inside it (+- GRID_OFF_GRACE_MIN) is logged only; still off after it -> a real alert.
+  // -1 = none. A grid loss at its start (+- GRID_OFF_GRACE_MIN) is labelled "planned" (log-only until 0.8.1, now
+  // pushed once with its restore); still off after it -> a real alert.
   int gridOffFrom = -1, gridOffTo = -1;
 };
 
@@ -43,6 +44,7 @@ struct AlertEvent {
   char em[6] = "";        // "" (not for e-mail) | "q" | "cool" | "rcap" | "cap" | "skip"
   uint8_t rc = 0;         // recipient mask 1..7 (0 = everyone on alerts/email/to)
   char kind = 'i';        // event-key suffix: o(pen) c(lear) r(epeat) i(nfo)
+  bool planned = false;   // 0.8.1: the owner's planned grid-off (GRID_LOSS / GRID_RESTORED), marked in Telegram
 };
 
 // Bounded queue (24). When full, the oldest sev <= 2 entry is dropped first (d1 §7.3).
@@ -77,8 +79,11 @@ class AlertEngine {
     uint32_t since = 0, activeSince = 0, lastNotify = 0;
     uint8_t consec = 0;
     bool openMailed = false;  // the open of the current episode was queued for e-mail (r8 §4.7)
-    bool quiet = false;       // 0.7.9: this episode is planned (grid-off window): log only, no push/e-mail/repeat
+    bool planned = false;     // 0.7.9: this episode is the planned grid-off: labelled, alerted again if it overruns
+    bool quiet = false;       // 0.8.1: its open is log-only (a boot inside the window: the cut started unseen)
     bool noRepeat = false;    // 0.7.9: never "Still active" re-notifications (GRID_LOSS)
+    bool openPushed = false;  // 0.8.1: the open of the current episode was pushed (ntfy / Telegram)
+    bool clearFollows = false;  // 0.8.1: the clear is pushed past quiet hours when its open was (GRID_RESTORED)
   };
   enum RuleId { R_FAULT = 0, R_BATT_CRIT, R_BATT_LOW, R_BATT_HIGH, R_GRID_LOSS, R_GRID_ABN, R_OVERLOAD, R_OVER_TEMP,
                 R_PV_OVERVOLT, R_LINK_LOST, R_COUNT };

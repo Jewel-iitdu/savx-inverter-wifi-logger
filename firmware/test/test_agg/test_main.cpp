@@ -398,8 +398,9 @@ void test_alert_grid_loss_and_restore() {
 
 
 // ---------------------------------------------------------------------------------------------- 0.7.9 grid-off
-// Owner's daily scheduled grid cut 08:00-15:30 (2026-10-22): the cut and its end are log-only; the grid failing after
-// the owner turned it back on inside the window, or still off after the window, are real alerts; no "Still active".
+// Owner's daily scheduled grid cut 08:00-15:30 (2026-10-22): the cut and its end are labelled "planned" (log-only in
+// 0.7.9-0.8.0, pushed once each since 0.8.1); the grid failing after the owner turned it back on inside the window, or
+// still off after the window, are real alerts; no "Still active".
 struct OutageStore : IGateStore {
   uint32_t outage = 0;
   void saveJobs(int32_t, uint16_t) override {}
@@ -413,11 +414,11 @@ struct GridRig {
   AlertEngine eng{q, &g};
   OutageStore store;
   uint32_t ms = 200000, ts = T_0800;
-  GridRig(bool window = true) {
+  GridRig(bool window = true, bool quietHours = false) {
     g.setStore(&store);
     AlertCfg c;
-    c.quietFrom = 0;  // no quiet hours in these tests (sev-3 restores would be log-only at night)
-    c.quietTo = 0;
+    c.quietFrom = quietHours ? 22 : 0;  // most tests run without quiet hours (the default is 22-7)
+    c.quietTo = quietHours ? 7 : 0;
     if (window) {
       c.gridOffFrom = 8 * 60;
       c.gridOffTo = 15 * 60 + 30;
@@ -436,25 +437,48 @@ struct GridRig {
   }
 };
 
-void test_planned_grid_off_is_quiet_and_manual_on_then_fail_alerts() {
+// 0.8.1 (owner request 2026-10-23): one alert when the planned cut starts, one when it ends (was log-only)
+void test_planned_grid_off_alerts_start_and_end_once() {
+  GridRig r;
+  rules::EmailPolicy pol;
+  pol.on = true;
+  r.eng.setEmailPolicy(pol);
+  r.run(0, 7 * 3600 + 25 * 60);  // 08:00 -> 15:25
+  std::vector<AlertEvent> ev;
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));  // one: no "Still active", no overrun alert
+  TEST_ASSERT_EQUAL(4, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].telegram);
+  TEST_ASSERT_TRUE(ev[0].planned);
+  TEST_ASSERT_EQUAL_STRING("q", ev[0].em);
+  TEST_ASSERT_NOT_NULL(strstr(ev[0].msg, "(planned grid-off)"));
+  r.run(231, 120);  // 15:25 the owner switches the grid back on
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_EQUAL(3, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].telegram);
+  TEST_ASSERT_TRUE(ev[0].planned);
+  TEST_ASSERT_EQUAL_STRING("q", ev[0].em);
+  TEST_ASSERT_NOT_NULL(strstr(ev[0].msg, "Grid restored after 7h 25m (planned grid-off)"));
+}
+
+void test_planned_grid_off_manual_on_then_fail_alerts() {
   GridRig r;
   r.run(0, 600);  // 08:00 the scheduled cut
   std::vector<AlertEvent> ev;
   TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));
-  TEST_ASSERT_EQUAL(0, ev[0].pushPrio);
-  TEST_ASSERT_FALSE(ev[0].telegram);
-  TEST_ASSERT_EQUAL_STRING("", ev[0].em);
-  TEST_ASSERT_NOT_NULL(strstr(ev[0].msg, "(planned grid-off)"));
-  TEST_ASSERT_EQUAL(0u, r.store.outage);  // planned outages are not persisted
-  r.run(0, 2 * 3600);                     // until 10:10: no "Still active"
+  TEST_ASSERT_TRUE(ev[0].pushPrio > 0);  // 0.8.1: pushed (log-only before)
+  TEST_ASSERT_TRUE(ev[0].planned);
+  TEST_ASSERT_TRUE(r.store.outage > 0);  // 0.8.1: persisted, so a reboot does not repeat it
+  r.run(0, 2 * 3600);                    // until 10:10: no "Still active"
   TEST_ASSERT_EQUAL(0, r.q.size());
-  r.run(231, 120);  // the owner turns the grid on inside the window: log-only
+  r.run(231, 120);  // the owner turns the grid on inside the window: the planned cut's end
   TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_RESTORED", &ev));
-  TEST_ASSERT_EQUAL(0, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
+  TEST_ASSERT_TRUE(ev[0].planned);
   r.run(0, 600);  // ~10:12 the grid really fails: a real alert
   TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));
   TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
   TEST_ASSERT_TRUE(ev[0].telegram);
+  TEST_ASSERT_FALSE(ev[0].planned);
   TEST_ASSERT_NULL(strstr(ev[0].msg, "planned"));
   TEST_ASSERT_TRUE(r.store.outage > 0);
   r.run(231, 120);
@@ -467,16 +491,19 @@ void test_planned_grid_off_overrun_alerts_once() {
   GridRig r;
   r.run(0, 7 * 3600 + 45 * 60);  // 08:00 -> 15:45, still off
   std::vector<AlertEvent> ev;
-  TEST_ASSERT_EQUAL(2, countType(r.q, "GRID_LOSS", &ev));  // the quiet cut + one real alert after 15:40
+  TEST_ASSERT_EQUAL(2, countType(r.q, "GRID_LOSS", &ev));  // the planned cut + one real alert after 15:40
   std::vector<AlertEvent> gl;
   for (const AlertEvent& e : ev)
     if (!strcmp(e.type, "GRID_LOSS")) gl.push_back(e);
-  TEST_ASSERT_EQUAL(0, gl[0].pushPrio);
+  TEST_ASSERT_TRUE(gl[0].pushPrio > 0);  // 0.8.1: the planned start is pushed too
+  TEST_ASSERT_TRUE(gl[0].planned);
   TEST_ASSERT_TRUE(gl[1].pushPrio > 0);
+  TEST_ASSERT_FALSE(gl[1].planned);
   TEST_ASSERT_NOT_NULL(strstr(gl[1].msg, "still off after the planned grid-off (08:00-15:30)"));
   r.run(231, 120);
   TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_RESTORED", &ev));
   TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
+  TEST_ASSERT_FALSE(ev[0].planned);  // an overrun ends as a real outage
   TEST_ASSERT_TRUE(ev[0].dur > 7 * 3600);
 }
 
@@ -487,13 +514,41 @@ void test_real_outage_no_repeats_and_boot_inside_window() {
   std::vector<AlertEvent> ev;
   TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));  // no "Still active" every 30 min
   TEST_ASSERT_EQUAL(0, r.q.size());
-  // a fresh boot at 11:00 with the grid off (inside the window): assumed to be the planned cut
+  // a fresh boot at 11:00 with the grid off (inside the window): assumed to be the planned cut, whose start the logger
+  // did not see: log only. 0.8.1: its end is still pushed.
   GridRig b;
   b.ms = 1000;
   b.ts = T_1200 - 3600;
   b.run(0, 300);
   TEST_ASSERT_EQUAL(1, countType(b.q, "GRID_LOSS", &ev));
   TEST_ASSERT_EQUAL(0, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].planned);
+  TEST_ASSERT_EQUAL(0u, b.store.outage);
+  b.run(231, 120);
+  TEST_ASSERT_EQUAL(1, countType(b.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
+  TEST_ASSERT_TRUE(ev[0].planned);
+}
+
+// 0.8.1: a reboot during the planned cut (e.g. a firmware update) resumes it silently; its end is still pushed
+void test_planned_grid_off_resumes_after_reboot() {
+  GridRig a;
+  a.run(0, 600);  // 08:00 the scheduled cut, pushed and persisted
+  std::vector<AlertEvent> ev;
+  TEST_ASSERT_EQUAL(1, countType(a.q, "GRID_LOSS", &ev));
+  TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
+  TEST_ASSERT_TRUE(a.store.outage > 0);
+  GridRig b;  // the logger restarts at 08:11, grid still off
+  b.ms = 1000;
+  b.ts = a.ts + 60;
+  b.eng.resumeOutage(a.store.outage);
+  b.run(0, 3 * 3600);
+  TEST_ASSERT_EQUAL(0, countType(b.q, "GRID_LOSS"));  // no second "grid lost"
+  b.run(231, 120);
+  TEST_ASSERT_EQUAL(1, countType(b.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
+  TEST_ASSERT_TRUE(ev[0].planned);
+  TEST_ASSERT_TRUE(ev[0].dur > 3 * 3600);
 }
 
 void test_outage_resumes_after_reboot_without_duplicate() {
@@ -514,6 +569,57 @@ void test_outage_resumes_after_reboot_without_duplicate() {
   TEST_ASSERT_EQUAL(1, countType(b.q, "GRID_RESTORED", &ev));
   TEST_ASSERT_TRUE(ev[0].pushPrio > 0);
   TEST_ASSERT_TRUE(ev[0].dur >= 1200);  // counts the time before the reboot too
+}
+
+// 0.8.1: the owner's 06:10-06:17 cut on 2026-10-23. "Grid lost" (sev 4) went to Telegram, but "grid restored" (a sev-3
+// clear) was muted by quiet hours while its e-mail still went out. A restore now follows a pushed loss past quiet hours.
+static const uint32_t T_0610 = T_1200 - 5 * 3600 - 50 * 60;
+
+void test_grid_restore_follows_pushed_loss_in_quiet_hours() {
+  GridRig r(false, true);
+  r.ts = T_0610;
+  r.run(0, 420);
+  std::vector<AlertEvent> ev;
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));
+  TEST_ASSERT_EQUAL(4, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].telegram);
+  r.run(236, 60);
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_EQUAL(3, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].telegram);
+  TEST_ASSERT_NOT_NULL(strstr(ev[0].msg, "Grid restored after 7m"));
+}
+
+void test_grid_restore_stays_quiet_when_loss_was_not_pushed() {
+  GridRig r(false, true);
+  r.ts = T_2300 + 50 * 60;  // 23:50, the day's push cap already used up: the loss is log-only
+  for (int i = 0; i < cfg::PUSH_CAP_PER_DAY; i++) r.g.pushPrio(5, false, r.ts, false);
+  r.run(0, 1800);
+  std::vector<AlertEvent> ev;
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_LOSS", &ev));
+  TEST_ASSERT_EQUAL(0, ev[0].pushPrio);
+  r.run(236, 60);  // 00:20 the next day: a fresh cap, but quiet hours and nobody heard about the loss
+  TEST_ASSERT_EQUAL(1, countType(r.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_EQUAL(0, ev[0].pushPrio);
+  TEST_ASSERT_FALSE(ev[0].telegram);
+}
+
+void test_grid_restore_after_reboot_follows_resumed_outage_in_quiet_hours() {
+  GridRig a(false, true);
+  a.ts = T_0610 - 3600;  // 05:10, pushed (sev 4)
+  a.run(0, 600);
+  std::vector<AlertEvent> ev;
+  TEST_ASSERT_EQUAL(1, countType(a.q, "GRID_LOSS", &ev));
+  TEST_ASSERT_TRUE(ev[0].telegram);
+  GridRig b(false, true);  // the logger reboots, grid still off
+  b.ms = 1000;
+  b.ts = a.ts + 60;
+  b.eng.resumeOutage(a.store.outage);
+  b.run(0, 300);
+  b.run(236, 60);
+  TEST_ASSERT_EQUAL(1, countType(b.q, "GRID_RESTORED", &ev));
+  TEST_ASSERT_EQUAL(3, ev[0].pushPrio);
+  TEST_ASSERT_TRUE(ev[0].telegram);
 }
 
 // 0.8.0: a planned restart (firmware update, requested reboot) is logged but never pushed or e-mailed
@@ -791,10 +897,15 @@ void test_builtin_email_flags() {
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_raise_quiet_is_log_only);
-  RUN_TEST(test_planned_grid_off_is_quiet_and_manual_on_then_fail_alerts);
+  RUN_TEST(test_planned_grid_off_alerts_start_and_end_once);
+  RUN_TEST(test_planned_grid_off_manual_on_then_fail_alerts);
+  RUN_TEST(test_planned_grid_off_resumes_after_reboot);
   RUN_TEST(test_planned_grid_off_overrun_alerts_once);
   RUN_TEST(test_real_outage_no_repeats_and_boot_inside_window);
   RUN_TEST(test_outage_resumes_after_reboot_without_duplicate);
+  RUN_TEST(test_grid_restore_follows_pushed_loss_in_quiet_hours);
+  RUN_TEST(test_grid_restore_stays_quiet_when_loss_was_not_pushed);
+  RUN_TEST(test_grid_restore_after_reboot_follows_resumed_outage_in_quiet_hours);
   RUN_TEST(test_time_keys);
   RUN_TEST(test_minuterec_format);
   RUN_TEST(test_energy_integration_1000w_1h);

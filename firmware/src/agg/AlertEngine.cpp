@@ -80,6 +80,7 @@ AlertEngine::AlertEngine(AlertQueue& q, NotifyGates* gates) : q_(q), gates_(gate
   rules_[R_BATT_HIGH] = mk("BATT_HIGH", nullptr, 4, 4, 30000, 300000, 0);
   rules_[R_GRID_LOSS] = mk("GRID_LOSS", "GRID_RESTORED", 4, 3, 10000, 30000, 0);
   rules_[R_GRID_LOSS].noRepeat = true;  // 0.7.9: one message when it goes, one when it comes back
+  rules_[R_GRID_LOSS].clearFollows = true;  // 0.8.1: ...and that one also at night (owner request 2026-10-23)
   rules_[R_GRID_ABN] = mk("GRID_ABNORMAL", nullptr, 2, 2, 300000, 300000, 0);
   rules_[R_OVERLOAD] = mk("OVERLOAD", nullptr, 4, 4, 30000, 60000, 0);
   rules_[R_OVER_TEMP] = mk("OVER_TEMP", nullptr, 4, 4, 30000, 300000, 0);
@@ -110,15 +111,21 @@ void AlertEngine::emit(const char* type, uint8_t sev, const char* st, const char
   snprintf(e.type, sizeof e.type, "%s", type);
   e.sev = sev;
   snprintf(e.st, sizeof e.st, "%s", st);
-  bool plannedOff = r && r->quiet;           // planned grid-off (0.7.9): log only
-  bool quietEv = plannedOff || quietNext_;    // raiseQuiet() (0.8.0): log only
+  bool isClear = !strcmp(st, "clear");
+  bool plannedOff = r && r->planned;  // the owner's planned grid-off: labelled (0.7.9), pushed since 0.8.1
+  bool quietEv = (r && r->quiet && !isClear) || quietNext_;  // log only: see Rule::quiet, raiseQuiet() (0.8.0)
   snprintf(e.msg, sizeof e.msg, "%s%s%s", repeat ? "Still active: " : "", msg, plannedOff ? " (planned grid-off)" : "");
+  e.planned = plannedOff;
   e.dur = dur;
   e.repeat = repeat;
-  bool isClear = !strcmp(st, "clear");
   e.kind = repeat ? 'r' : !strcmp(st, "open") ? 'o' : isClear ? 'c' : 'i';
-  e.pushPrio = quietEv ? 0 : gates_->pushPrio(sev, isClear, epoch, force);
+  // 0.8.1: a GRID_RESTORED whose GRID_LOSS was pushed skips quiet hours (a sev-3 clear was muted at 06:17 while its
+  // e-mail went out, 2026-10-23); the daily cap still applies
+  bool follow = isClear && r && r->clearFollows && r->openPushed;
+  e.pushPrio = quietEv ? 0 : gates_->pushPrio(sev, isClear, epoch, force, follow);
   e.telegram = e.pushPrio > 0;  // 0.7.7: Telegram is a primary channel (owner request), same gates as ntfy
+  if (r && e.kind == 'o') r->openPushed = e.pushPrio > 0;
+  if (r && isClear) r->openPushed = false;
   // e-mail flag for built-in alerts (r8 §4.7). DAILY_SUMMARY never: the mailer sends its own summary.
   bool mail = false;
   if (!quietEv && policy_.on && strcmp(type, "DAILY_SUMMARY") != 0) {
@@ -166,7 +173,7 @@ void AlertEngine::update(Rule& r, bool cond, bool clearCond, uint32_t nowMs, uin
       r.st = RState::CLEARING;
       r.since = nowMs;
     } else {
-      if (r.sev >= 4 && !r.noRepeat && !r.quiet && cfg_.notifyRepeatMin > 0 &&
+      if (r.sev >= 4 && !r.noRepeat && !r.planned && cfg_.notifyRepeatMin > 0 &&
           (uint32_t)(nowMs - r.lastNotify) >= (uint32_t)cfg_.notifyRepeatMin * 60000UL) {
         r.lastNotify = nowMs;
         emit(r.type, r.sev, "open", openMsg, 0, nowMs, epoch, true, false, &r);
@@ -282,17 +289,25 @@ void AlertEngine::evaluate(const Sample& s, uint32_t nowMs, uint32_t epoch) {
       if (ago < cfg::OUTAGE_RESUME_MAX_S && r.st != RState::ACTIVE && r.st != RState::CLEARING) {
         r.st = RState::ACTIVE;
         r.activeSince = r.lastNotify = nowMs - ago * 1000UL;
+        r.planned = nearPlannedStart(resumeEpoch_);  // 0.8.1: planned cuts are persisted too
         r.quiet = false;
+        r.openPushed = true;  // 0.8.1: it was notified, so its restore follows past quiet hours
       }
       resumeEpoch_ = 0;
     }
     // A new episode is planned only if it starts at the scheduled cut (window start +- grace). If the owner turns the
     // grid back on inside the window and it then fails, that is a real outage (owner request 2026-10-22). Right after
-    // a boot inside the window with the grid off, assume the planned cut (the logger did not see it start).
-    if (r.st == RState::IDLE || r.st == RState::PENDING)
-      r.quiet = nearPlannedStart(epoch) || (planned && nowMs < cfg::GRID_BOOT_GRACE_MS + 120000UL);
+    // a boot inside the window with the grid off, assume the planned cut, but only log its start (the logger did not
+    // see it). 0.8.1 (owner request 2026-10-23): the planned cut and its end are pushed once each, labelled.
+    if (r.st == RState::IDLE || r.st == RState::PENDING) {
+      bool atStart = nearPlannedStart(epoch);
+      bool bootInside = planned && nowMs < cfg::GRID_BOOT_GRACE_MS + 120000UL;
+      r.planned = atStart || bootInside;
+      r.quiet = !atStart && bootInside;
+    }
     // planned, but the grid is still off after the window (+ grace): a real outage now
-    if (r.st == RState::ACTIVE && r.quiet && !planned && absent && tu::epochValid(epoch)) {
+    if (r.st == RState::ACTIVE && r.planned && !planned && absent && tu::epochValid(epoch)) {
+      r.planned = false;
       r.quiet = false;
       r.lastNotify = nowMs;
       char m2[200];

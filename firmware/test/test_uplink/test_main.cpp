@@ -652,6 +652,12 @@ void test_telegram_bangla_and_pairing() {
   TEST_ASSERT_NOT_NULL(strstr(b, "বিদ্যুৎ ছিল না: ৪৩ মিনিট"));
   TEST_ASSERT_NOT_NULL(strstr(b, "৫ মিনিট দেরিতে"));
   TEST_ASSERT_NULL(strstr(b, "ঠিক হয়েছে"));  // GRID_RESTORED has its own title
+  TEST_ASSERT_NULL(strstr(b, "পরিকল্পিত"));
+  e.planned = c.planned = true;  // 0.8.1: the owner's planned grid-off is pushed, marked in the title
+  TEST_ASSERT_TRUE(notifyfmt::telegramJson(e, "42", T_1435, true, b, sizeof b) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(b, "বিদ্যুৎ চলে গেছে (পরিকল্পিত বন্ধ)"));
+  TEST_ASSERT_TRUE(notifyfmt::telegramJson(c, "42", T_1435, true, b, sizeof b) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(b, "বিদ্যুৎ ফিরে এসেছে (পরিকল্পিত বন্ধ শেষ)"));
   AlertEvent l = mkEvent("BATT_LOW", "clear", 'c', 4);
   TEST_ASSERT_TRUE(notifyfmt::telegramJson(l, "42", 0, true, b, sizeof b) > 0);
   TEST_ASSERT_NOT_NULL(strstr(b, "ব্যাটারি কম — ঠিক হয়েছে"));

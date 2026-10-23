@@ -1,5 +1,6 @@
 // NotifyGates.h - shared notification gates for AlertEngine and RuleEngine (r8 §4.1, §4.6; d1 §7.3). Host-portable.
-//   * push priority: quiet hours (sev <= 3 and clears are log-only), global 40 pushes/day (above it only sev 5);
+//   * push priority: quiet hours (sev <= 3 and clears are log-only, except a GRID_RESTORED after a pushed GRID_LOSS),
+//     global 40 pushes/day (above it only sev 5);
 //   * device e-mail job cap: <= MAIL_JOBS_PER_DAY (40) mailq jobs per local day, the last MAIL_RESERVE_SEV4 (5)
 //     kept for severity >= 4. The counter is persisted (NVS rules/mj) through IGateStore so reboots cannot reset it.
 // Both engines run in aggTask, so no locking is needed; jobsToday() is read by other tasks as a plain int.
@@ -23,8 +24,9 @@ class NotifyGates {
   void restoreJobs(int32_t day, uint16_t cnt) { jobDay_ = day; jobs_ = cnt; }
 
   bool quiet(uint32_t epoch) const;
-  // ntfy priority 1..5, or 0 = log only. Counts the push when it returns > 0 (force: TEST_ALERT bypasses gates).
-  uint8_t pushPrio(uint8_t sev, bool clear, uint32_t epoch, bool force);
+  // ntfy priority 1..5, or 0 = log only. Counts the push when it returns > 0 (force: TEST_ALERT bypasses gates;
+  // noQuiet: only quiet hours are skipped, 0.8.1 GRID_RESTORED after a pushed GRID_LOSS).
+  uint8_t pushPrio(uint8_t sev, bool clear, uint32_t epoch, bool force, bool noQuiet = false);
   // true = one more mailq job allowed now (the counter is incremented and persisted).
   bool takeMailJob(uint8_t sev, uint32_t epoch);
   bool mailJobAvailable(uint8_t sev, uint32_t epoch);

@@ -148,7 +148,8 @@ static void telegramTextBn(const AlertEvent& e, uint32_t now, char* text, size_t
   bool ownClear = !strcmp(e.type, "GRID_RESTORED");  // a clear with its own title
   const char* icon = clear ? "\xE2\x9C\x85" : (l ? l->icon : "\xF0\x9F\x94\x94");
   const char* label = l ? l->label : typeLabel(e.type);
-  int k = snprintf(text, n, "%s %s%s%s", icon, label, clear && !ownClear ? " — ঠিক হয়েছে" : "",
+  const char* planned = !e.planned ? "" : clear ? " (পরিকল্পিত বন্ধ শেষ)" : " (পরিকল্পিত বন্ধ)";  // 0.8.1
+  int k = snprintf(text, n, "%s %s%s%s%s", icon, label, planned, clear && !ownClear ? " — ঠিক হয়েছে" : "",
                    e.repeat ? " (এখনও চলছে)" : "");
   if (k < 0 || (size_t)k >= n) return;
   if (e.dur) {

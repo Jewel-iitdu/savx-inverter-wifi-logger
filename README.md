@@ -28,8 +28,8 @@ Voltronic / PI30 inverters (Axpert, MPP Solar, EASun and other re-brands).
   - **Built-in:** grid lost/restored, battery low/critical, inverter fault, overload, over-temperature and inverter
     link lost.
   - **Your own:** usage-threshold rules, e.g. "daily grid use > 5 kWh".
-  - **Planned grid-off window:** if you switch the grid off on a schedule, it stays quiet, but a real outage still
-    alerts.
+  - **Planned grid-off window:** if you switch the grid off on a schedule, you get one message when the cut starts and
+    one when it ends, marked "planned". A real outage still alerts normally.
 - **Free cloud:** Firebase Realtime Database (Spark plan) and Cloudflare Workers static hosting. No card needed.
 - **Optional Android app:** a small Capacitor wrapper around the dashboard.
 - **Local page on your home WiFi**, with status, raw replies and over-the-air firmware updates.
