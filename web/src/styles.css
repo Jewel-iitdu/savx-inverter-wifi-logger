@@ -288,6 +288,10 @@ h3 {
   }
 }
 
+.tiles + .tiles {
+  margin-top: 8px;
+}
+
 .tile {
   background: var(--surface-2);
   border-radius: 10px;

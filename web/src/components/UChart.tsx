@@ -3,8 +3,8 @@
 import { useEffect, useRef } from 'preact/hooks';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
-import { TZ } from '../lib/time';
-import { getLang } from '../lib/i18n';
+import { TZ, fmtDateTime, fmtTick, fmtTime } from '../lib/time';
+import { getLang, isBn } from '../lib/i18n';
 
 export interface SeriesSpec {
   label: string;
@@ -40,10 +40,16 @@ const fmtHM = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', 
 const fmtDHM = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const fmtDM = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric' });
 
-/** 24-hour local tick labels; day labels when the window spans several days. */
+/** Local tick labels (12-hour in English, 24-hour in Bangla); day labels when the window spans several days. */
 function xTicks(u: uPlot, splits: number[]): string[] {
   const span = (u.scales.x.max ?? 0) - (u.scales.x.min ?? 0);
-  return splits.map((v) => (span > 2 * 86400 ? fmtDM : fmtHM).format(new Date(v * 1000)));
+  return splits.map((v) => (span > 2 * 86400 ? fmtDM.format(new Date(v * 1000)) : fmtTick(v)));
+}
+
+/** Legend time while touching: '7:11 AM' / '22 Oct, 7:11 AM' in English, 24-hour in Bangla. */
+function legendTime(v: number, timeOnly?: boolean): string {
+  if (!isBn()) return timeOnly ? fmtTime(v) : fmtDateTime(v);
+  return (timeOnly ? fmtHM : fmtDHM).format(new Date(v * 1000));
 }
 
 function cssVar(name: string): string {
@@ -85,7 +91,7 @@ export function UChart(props: ChartProps) {
       scales,
       series: [
         // no "Time:" label and no "–" placeholders while idle (owner: the dashed legend looked broken on the phone)
-        { label: '\u200b', value: (_u, v) => (v == null ? '' : (props.timeOnly ? fmtHM : fmtDHM).format(new Date(v * 1000))) },  // '' would become uPlot's default "Time"
+        { label: '\u200b', value: (_u, v) => (v == null ? '' : legendTime(v, props.timeOnly)) },  // '' would become uPlot's default "Time"
         ...props.series.map<uPlot.Series>((s) => {
           const c = cssVar(s.color);
           return {

@@ -47,6 +47,18 @@ export function fmtPct(v: number | undefined | null, digits = 0): string {
   return isNum(v) ? localizeDigits(`${v.toFixed(digits)}${NB}%`) : '–';
 }
 
+/** Taka: '৳12.40' below 100, '৳1,240' from 100. */
+export function fmtTk(v: number | undefined | null): string {
+  if (!isNum(v)) return '–';
+  const d = Math.abs(v) < 100 ? 2 : 0;
+  return localizeDigits(`৳${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`);
+}
+
+/** ৳ per kWh: '৳8.50/kWh'. */
+export function fmtRate(v: number | undefined | null): string {
+  return isNum(v) ? localizeDigits(`৳${v.toFixed(2)}/kWh`) : '–';
+}
+
 export function fmtBytes(v: number | undefined | null): string {
   if (!isNum(v)) return '–';
   if (v >= 1048576) return localizeDigits(`${(v / 1048576).toFixed(1)}${NB}MB`);

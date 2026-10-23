@@ -3,10 +3,13 @@
 import { useMemo, useState } from 'preact/hooks';
 import { useApp, useReportError } from '../context';
 import { useAsync, useStored } from '../lib/hooks';
-import { addDays, addMonths, fmtDay, fmtMonth, fmtMonthShort, keyToEpoch, monthKey, todayKey } from '../lib/time';
+import { addDays, addMonths, fmtDay, fmtMonth, fmtMonthShort, keyToEpoch, monthBounds, monthKey, todayKey } from '../lib/time';
 import { localizeDigits as dg, t } from '../lib/i18n';
 import { daySeries, histCsv, multiDaySeries, solarFraction, totalsFromRecs } from '../lib/series';
-import { fmtNum, fmtWh, isNum } from '../lib/format';
+import { fmtNum, fmtPct, fmtTk, fmtWh, isNum } from '../lib/format';
+import { useDayMoney } from '../lib/money';
+import { sumMoney, type Money } from '../lib/tariff';
+import { MoneyCard } from '../components/MoneyCard';
 import { usePowerView, viewDailyMap, viewRecs } from '../lib/power';
 import { saveCsv } from '../lib/csv';
 import { getDailyMonth, getDailyYear, getHistDay, getWeek } from '../data/history';
@@ -87,6 +90,7 @@ function DayView({ date }: { date: string }) {
     return [a.xs, a.load, b.load, a.pv, b.pv];
   }, [compare, otherRecs, recs, date]);
   const frac = solarFraction(tot.eld, tot.egr);
+  const money = useDayMoney(date, date);
 
   return (
     <>
@@ -113,6 +117,7 @@ function DayView({ date }: { date: string }) {
           </div>
         </Card>
       )}
+      {s.count > 0 && <MoneyCard title={t('money.title')} date={date} m={money} />}
       <Card title={t('hist.compare')}>
         <div class="picker">
           <input type="date" value={compare} max={todayKey()} onChange={(e) => setCompare(e.currentTarget.value)} aria-label={t('hist.compareDate')} />
@@ -192,7 +197,9 @@ function WeekView({ end }: { end: string }) {
   );
 }
 
-function DailyTable({ rows }: { rows: Array<[string, Daily]> }) {
+const tk0 = (v: number | undefined) => (isNum(v) ? fmtNum(v, 0) : '–');
+
+function DailyTable({ rows, money }: { rows: Array<[string, Daily]>; money: Record<string, Money> | null }) {
   return (
     <div class="table-wrap">
       <table class="tbl">
@@ -202,6 +209,8 @@ function DailyTable({ rows }: { rows: Array<[string, Daily]> }) {
             <th>PV</th>
             <th>{t('w.load')}</th>
             <th>{t('th.gridStar')}</th>
+            <th>{t('th.gridTk')}</th>
+            <th>{t('th.savedTk')}</th>
             <th>SOC</th>
             <th>{t('th.battV')}</th>
             <th>{t('th.noGrid')}</th>
@@ -215,6 +224,8 @@ function DailyTable({ rows }: { rows: Array<[string, Daily]> }) {
               <td>{fmtNum(isNum(r.epv) ? r.epv / 1000 : undefined, 1)}</td>
               <td>{fmtNum(isNum(r.eld) ? r.eld / 1000 : undefined, 1)}</td>
               <td>{fmtNum(isNum(r.egr) ? r.egr / 1000 : undefined, 1)}</td>
+              <td>{tk0(money?.[d]?.gridTk)}</td>
+              <td>{tk0(money?.[d]?.savedTk)}</td>
               <td>
                 {fmtNum(r.socn)}–{fmtNum(r.socx)}
               </td>
@@ -239,6 +250,9 @@ function MonthView({ ym }: { ym: string }) {
   const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k]);
   const rows = Object.entries(data ?? {}).sort((a, b) => (a[0] < b[0] ? -1 : 1));
   const tot = rows.reduce((s, [, r]) => ({ epv: s.epv + (r.epv ?? 0), eld: s.eld + (r.eld ?? 0), egr: s.egr + (r.egr ?? 0) }), { epv: 0, eld: 0, egr: 0 });
+  const [first, last] = monthBounds(ym);
+  const m = useDayMoney(first, last);
+  const mt = m.money ? sumMoney(m.money, first, last) : null;
   return (
     <Card title={fmtMonth(ym)} right={<span class="muted small">{t('hist.kwhNote')}</span>}>
       {q.loading ? (
@@ -252,7 +266,9 @@ function MonthView({ ym }: { ym: string }) {
             <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(tot.eld, 1)} tone="load" />
             <Tile label={t('tile.gridEst')} value={fmtWh(tot.egr, 1)} tone="grid" />
           </div>
-          <DailyTable rows={rows} />
+          <MoneyTiles m={mt} />
+          <DailyTable rows={rows} money={m.money} />
+          <p class="muted small">{t('money.note', { n: m.monthStart ?? 1 })}</p>
         </>
       )}
     </Card>
@@ -265,6 +281,9 @@ function YearView({ year }: { year: string }) {
   const q = useAsync(() => getDailyYear(source, year), [source, year]);
   useReportError('year', q.error);
   const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k]);
+  const m = useDayMoney(`${year}-01-01`, `${year}-12-31`);
+  const yt = m.money ? sumMoney(m.money, `${year}-01-01`, `${year}-12-31`) : null;
+  const mm = (k: string) => (m.money ? sumMoney(m.money, `${k}-01`, `${k}-31`) : null);
   const months = useMemo(() => {
     const m = new Map<string, { epv: number; eld: number; egr: number; days: number; gout: number }>();
     for (const [d, r] of Object.entries(data ?? {})) {
@@ -286,35 +305,56 @@ function YearView({ year }: { year: string }) {
       ) : months.length === 0 ? (
         <Empty>{t('hist.yearEmpty')}</Empty>
       ) : (
-        <div class="table-wrap">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>{t('th.month')}</th>
-                <th>PV</th>
-                <th>{t('w.load')}</th>
-                <th>{t('th.gridStar')}</th>
-                <th>{t('th.pvDay')}</th>
-                <th>{t('th.noGrid')}</th>
-                <th>{t('th.days')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map(([k, e]) => (
-                <tr key={k}>
-                  <td>{fmtMonthShort(k)}</td>
-                  <td>{dg((e.epv / 1000).toFixed(0))}</td>
-                  <td>{dg((e.eld / 1000).toFixed(0))}</td>
-                  <td>{dg((e.egr / 1000).toFixed(0))}</td>
-                  <td>{dg((e.epv / 1000 / Math.max(1, e.days)).toFixed(1))}</td>
-                  <td>{t('u.h', { n: Number((e.gout / 60).toFixed(0)) })}</td>
-                  <td>{dg(String(e.days))}</td>
+        <>
+          <MoneyTiles m={yt} />
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th>{t('th.month')}</th>
+                  <th>PV</th>
+                  <th>{t('w.load')}</th>
+                  <th>{t('th.gridStar')}</th>
+                  <th>{t('th.billTk')}</th>
+                  <th>{t('th.savedTk')}</th>
+                  <th>{t('th.pvDay')}</th>
+                  <th>{t('th.noGrid')}</th>
+                  <th>{t('th.days')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {months.map(([k, e]) => (
+                  <tr key={k}>
+                    <td>{fmtMonthShort(k)}</td>
+                    <td>{dg((e.epv / 1000).toFixed(0))}</td>
+                    <td>{dg((e.eld / 1000).toFixed(0))}</td>
+                    <td>{dg((e.egr / 1000).toFixed(0))}</td>
+                    <td>{tk0(mm(k)?.gridTk)}</td>
+                    <td>{tk0(mm(k)?.savedTk)}</td>
+                    <td>{dg((e.epv / 1000 / Math.max(1, e.days)).toFixed(1))}</td>
+                    <td>{t('u.h', { n: Number((e.gout / 60).toFixed(0)) })}</td>
+                    <td>{dg(String(e.days))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p class="muted small">{t('money.note', { n: m.monthStart ?? 1 })}</p>
+        </>
       )}
     </Card>
+  );
+}
+
+/** Grid bill, solar saving, the bill without solar and how much solar cut it, for a month or a year. */
+function MoneyTiles({ m }: { m: Money | null }) {
+  if (!m) return <Spinner />;
+  return (
+    <div class="tiles">
+      <Tile label={t('money.bill')} value={fmtTk(m.gridTk)} sub={t('money.subGrid', { e: fmtNum(m.grid, 0, 'kWh') })} tone="grid" />
+      <Tile label={t('money.saved')} value={fmtTk(m.savedTk)} sub={t('money.subSolar', { e: fmtNum(m.solar, 0, 'kWh') })} tone="pv" />
+      <Tile label={t('money.without')} value={fmtTk(m.gridTk + m.savedTk)} sub={t('money.withoutSub')} />
+      <Tile label={t('money.cut')} value={m.gridTk + m.savedTk > 0 ? fmtPct((m.savedTk / (m.gridTk + m.savedTk)) * 100) : '–'} sub={t('money.cutSub')} tone="pv" />
+    </div>
   );
 }

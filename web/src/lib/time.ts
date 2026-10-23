@@ -116,15 +116,6 @@ export function addMonths(ym: string, n: number): string {
   return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}`;
 }
 
-const timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-const dateTimeFmt = new Intl.DateTimeFormat('en-GB', {
-  timeZone: TZ,
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
 const dayFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' });
 const dayMonthFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
 const monthFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', month: 'long', year: 'numeric' });
@@ -153,23 +144,39 @@ function bnDayPart(hh: number): string {
   return 'রাত';
 }
 
-/** Wall-clock time: '07:11' in English; 'সকাল ৭:১১' (12-hour with the part of the day) in Bangla. */
+const NB = '\u00a0';
+const ampm = (hh: number) => (hh < 12 ? 'AM' : 'PM');
+
+/** Wall-clock time, 12-hour: '7:11 AM' in English (owner's request); 'সকাল ৭:১১' (with the part of the day) in Bangla. */
 export function fmtClock(hh: number, mm: number): string {
-  if (!isBn()) return `${pad2(hh)}:${pad2(mm)}`;
+  if (!isBn()) return `${hh % 12 || 12}:${pad2(mm)}${NB}${ampm(hh)}`;
   return `${bnDayPart(hh)} ${localizeDigits(`${hh % 12 || 12}:${pad2(mm)}`)}`;
+}
+
+/** Chart tick: '7 AM', '7:30 AM' in English; Bangla keeps the compact 24-hour '07:00' (narrow axis). */
+export function fmtTick(epochSec: number): string {
+  const p = localParts(epochSec);
+  if (isBn()) return `${pad2(p.hh)}:${pad2(p.mm)}`;
+  return p.mm ? fmtClock(p.hh, p.mm) : `${p.hh % 12 || 12}${NB}${ampm(p.hh)}`;
+}
+
+/** 24-hour '22 Oct, 07:11': the logger's e-mails still use it, so the e-mail preview does too. */
+export function fmtDateTime24(epochSec: number): string {
+  const p = localParts(epochSec);
+  return `${dayMonthFmt.format(new Date(Date.UTC(p.y, p.m - 1, p.d)))}, ${pad2(p.hh)}:${pad2(p.mm)}`;
 }
 
 const ymd = (date: string) => date.split('-').map(Number);
 
 export function fmtTime(epochSec: number): string {
-  if (!isBn()) return timeFmt.format(new Date(epochSec * 1000));
   const p = localParts(epochSec);
   return fmtClock(p.hh, p.mm);
 }
 
+/** '22 Oct, 7:11 AM' ('২২ অক্টো, সকাল ৭:১১' in Bangla). */
 export function fmtDateTime(epochSec: number): string {
-  if (!isBn()) return dateTimeFmt.format(new Date(epochSec * 1000));
   const p = localParts(epochSec);
+  if (!isBn()) return `${dayMonthFmt.format(new Date(Date.UTC(p.y, p.m - 1, p.d)))}, ${fmtClock(p.hh, p.mm)}`;
   return `${localizeDigits(String(p.d))} ${BN_MONTHS_SHORT[p.m - 1]}, ${fmtClock(p.hh, p.mm)}`;
 }
 

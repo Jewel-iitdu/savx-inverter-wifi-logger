@@ -10,7 +10,7 @@ import { CLR_RANGE, METRIC_BY_ID, METRICS, type MetricDef, type MetricGroup, typ
 import { SEVERITY_NAMES } from '../codes';
 import { inEnglish, localizeDigits, metricBn, metricGroupBn, t, type Key } from '../lib/i18n';
 import type { AlertRule, Daily, EmailCfg, Live, RuleMode, RuleOp, RuleStateId } from './types';
-import { addDays, fmtClock, fmtDateTime, monthBounds, weekdayShort } from '../lib/time';
+import { addDays, fmtClock, fmtDateTime24, monthBounds, weekdayShort } from '../lib/time';
 
 // ------------------------------------------------------------------ constants
 
@@ -385,7 +385,7 @@ export function parseInputValue(metric: MetricId, text: string): number {
   return METRIC_BY_ID[metric].unit === 'Wh' ? Math.round(n * 1000) : n;
 }
 
-/** 'hhmm' -> '17:00' ('বিকাল ৫:০০' in Bangla). */
+/** 'hhmm' -> '5:00 PM' ('বিকাল ৫:০০' in Bangla). */
 export function fmtHhmm(hhmm: string | undefined): string {
   return hhmm && hhmm.length === 4 ? fmtClock(Number(hhmm.slice(0, 2)), Number(hhmm.slice(2))) : '–';
 }
@@ -434,7 +434,7 @@ export function conditionText(r: Pick<AlertRule, 'metric' | 'scope' | 'op' | 'va
   return base;
 }
 
-/** "E-mail, ntfy · 06:00–23:00 · cooldown 1 h" */
+/** "E-mail, ntfy · 6:00 AM–11:00 PM · cooldown 1 h" */
 export function channelsText(r: AlertRule): string {
   const ch = [r.email ? t('common.email') : '', r.ntfy ? 'ntfy' : ''].filter(Boolean).join(', ');
   const parts = [ch || t('ch.none')];
@@ -455,13 +455,15 @@ function previewSubjectEn(r: Pick<AlertRule, 'name' | 'metric' | 'scope' | 'op' 
   const val = isNumber(v) ? fmtValue(r.metric, v, { est: false }) : '…';
   const thr = fmtValue(r.metric, r.value, { est: false });
   const name = r.name || '(no name)';
-  if (r.mode === 'at') return `${SUBJECT_TAG} ${name}: ${val} at ${fmtHhmm(r.at)} (limit ${thr}${est})`;
+  // 24-hour 'at 17:00', exactly as the logger writes it (RuleEngine)
+  const at = r.at && r.at.length === 4 ? `${r.at.slice(0, 2)}:${r.at.slice(2)}` : '–';
+  if (r.mode === 'at') return `${SUBJECT_TAG} ${name}: ${val} at ${at} (limit ${thr}${est})`;
   return `${SUBJECT_TAG} ${name}: now ${val} (limit ${thr}${scopeWord(r.scope)}${est})`;
 }
 
 /** The e-mail body lines of the preview (English, like the mailer's e-mail). */
 export function previewLines(rid: string | null, r: Pick<AlertRule, 'sev'>, nowEpoch: number): string[] {
-  return inEnglish(() => [`When: ${fmtDateTime(nowEpoch)} (Asia/Dhaka)`, `Severity: ${SEVERITY_NAMES[r.sev] ?? r.sev}${rid ? ` | rule ${rid}` : ''}`]);
+  return inEnglish(() => [`When: ${fmtDateTime24(nowEpoch)} (Asia/Dhaka)`, `Severity: ${SEVERITY_NAMES[r.sev] ?? r.sev}${rid ? ` | rule ${rid}` : ''}`]);
 }
 
 // ------------------------------------------------------------------ current values (what the logger compares)

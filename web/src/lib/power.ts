@@ -47,6 +47,13 @@ export function usePowerView(): PowerView {
   return powerView(meta?.dia, unit, parsePf(pf));
 }
 
+/** The view for the electricity bill: always W, since the meter bills kWh (VA × power factor on VA-only inverters). */
+export function useBillView(): PowerView {
+  const { meta } = useApp();
+  const { pf } = usePowerPrefs();
+  return powerView(meta?.dia, 'W', parsePf(pf));
+}
+
 const sc = (v: number | undefined, k: number) => (isNum(v) ? v * k : v);
 // grid = load + AC charging: only the load part is VA.
 const gridP = (gw: number | undefined, w: number | undefined, k: number) => (isNum(gw) && isNum(w) ? Math.max(0, gw - w * (1 - k)) : gw);

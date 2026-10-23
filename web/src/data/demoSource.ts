@@ -607,6 +607,12 @@ export function createDemoSource(): DataSource {
       cb(alerts);
       return () => alertsListeners.delete(cb);
     },
+    onMonthStart(cb) {
+      const f = (a: AlertsDoc | null) => cb(withEmailDefaults(a?.email).monthStart);
+      alertsListeners.add(f);
+      f(alerts);
+      return () => alertsListeners.delete(f);
+    },
     onAlertState(cb) {
       const f = () => cb(alertStateNow());
       refreshers.add(f);

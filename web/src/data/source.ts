@@ -51,6 +51,8 @@ export interface DataSource {
   onConnected(cb: (up: boolean) => void): Unsub;
   /** alerts/ (e-mail settings + up to 16 rules, ≤ ~6 KB). */
   onAlerts(cb: (v: AlertsDoc | null) => void, err?: ErrCb): Unsub;
+  /** alerts/email/monthStart (a few bytes): first day of the billing month, for the slab tariff on Today and History. */
+  onMonthStart(cb: (v: number | null) => void, err?: ErrCb): Unsub;
   /** alertState/ (≈ 1.5 KB, written by the logger on rule transitions). */
   onAlertState(cb: (v: Record<string, AlertStateRec> | null) => void, err?: ErrCb): Unsub;
   /** mailer/ (≈ 300 B, rewritten every 5 min by the Apps Script mailer). */

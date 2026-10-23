@@ -152,6 +152,7 @@ export function createFirebaseSource(): DataSource {
       return onValue(ref(db, '.info/connected'), (s) => cb(s.val() === true));
     },
     onAlerts: (cb, err) => listen<AlertsDoc>('alerts', cb, err),
+    onMonthStart: (cb, err) => listen<number>('alerts/email/monthStart', cb, err),
     onAlertState: (cb, err) => listen<Record<string, AlertStateRec>>('alertState', cb, err),
     onMailer: (cb, err) => listen<MailerStatus>('mailer', cb, err),
 

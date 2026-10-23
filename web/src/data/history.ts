@@ -6,7 +6,7 @@
 //   logger back-fills minutes it could not upload during an outage.
 import type { DataSource } from './source';
 import type { Daily, HistRec } from './types';
-import { addDays, daysBetween, monthBounds, todayKey } from '../lib/time';
+import { addDays, addMonths, daysBetween, monthBounds, monthKey, todayKey } from '../lib/time';
 import { idbGet, idbSet } from '../lib/idb';
 
 const mem = new Map<string, Record<string, HistRec>>();
@@ -72,6 +72,16 @@ export async function getDailyYear(src: DataSource, year: string): Promise<Recor
   );
   const parts = await Promise.all(months.map((ym) => getDailyMonth(src, ym)));
   return Object.assign({}, ...parts) as Record<string, Daily>;
+}
+
+/** daily/{from..to} across months (billing months span two), from the per-month cache. */
+export async function getDailySpan(src: DataSource, from: string, to: string): Promise<Record<string, Daily>> {
+  const months: string[] = [];
+  for (let ym = monthKey(from); ym <= monthKey(to); ym = addMonths(ym, 1)) months.push(ym);
+  const parts = await Promise.all(months.map((ym) => getDailyMonth(src, ym)));
+  const out: Record<string, Daily> = {};
+  for (const p of parts) for (const [d, v] of Object.entries(p)) if (d >= from && d <= to) out[d] = v;
+  return out;
 }
 
 /** Session cache for today's minutes (Today page). */

@@ -12,6 +12,8 @@ import { saveCsv } from '../lib/csv';
 import { todayMem } from '../data/history';
 import type { Daily, HistRec } from '../data/types';
 import { DayCharts } from '../components/DayCharts';
+import { MoneyCard } from '../components/MoneyCard';
+import { useDayMoney } from '../lib/money';
 import { Card, Empty, Segmented, Spinner, Tile } from '../components/ui';
 
 type Range = '6' | '12' | '24';
@@ -88,6 +90,9 @@ export function TodayPage() {
   const eld = d?.eld ?? totals.eld;
   const egr = d?.egr ?? totals.egr;
   const frac = solarFraction(eld, egr);
+  // money from the raw totals: useDayMoney applies the kWh (bill) view itself
+  const raw = useMemo(() => totalsFromRecs(recs), [recs]);
+  const money = useDayMoney(date, date, { [date]: daily.value ?? { egr: raw.egr, epv: raw.epv } });
   const recon = isNum(d?.epvi) && d!.epvi! > 0 ? ((epv - d!.epvi!) / d!.epvi!) * 100 : null;
   const t0 = keyToEpoch(date, '0000');
   const xRange: [number, number] = range === '24' ? [t0, t0 + 86400] : [now - Number(range) * 3600, now + 300];
@@ -138,6 +143,8 @@ export function TodayPage() {
         )}
         <p class="muted small">{t('today.coarse')}</p>
       </Card>
+
+      <MoneyCard title={t('money.titleToday')} date={date} m={money} />
     </div>
   );
 }
