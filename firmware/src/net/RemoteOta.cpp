@@ -139,10 +139,11 @@ bool run(uint32_t code) {
     setStatus("failed: no release repo on the logger");
     return false;
   }
-  if (ESP.getMaxAllocHeap() < cfg::OTA_MIN_HEAP) {
-    setStatus("failed: low memory (%u)", (unsigned)ESP.getMaxAllocHeap());
+  if (!ota::heapOk(ESP.getMaxAllocHeap(), ESP.getFreeHeap())) {
+    setStatus("failed: low memory (%u/%u)", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
     return false;
   }
+  Serial.printf("[ota] heap: block %u, free %u\n", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
   // Long blocking network calls below (each with its own timeout): leave the task watchdog for the duration.
   esp_task_wdt_delete(nullptr);
   struct Rewd {

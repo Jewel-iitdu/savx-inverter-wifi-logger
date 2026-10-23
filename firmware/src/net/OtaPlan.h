@@ -29,6 +29,9 @@ enum class Go : uint8_t { NONE, START, NOT_NEWER, NO_REPO };
 // A request (code, at) is handled once: `handledAt` is the request time of the last one acted on.
 Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt, bool repoSet);
 
+// Enough internal RAM for the TLS download (largest free block, total free; cfg::OTA_MIN_BLOCK / OTA_MIN_FREE)
+bool heapOk(uint32_t maxBlock, uint32_t freeHeap);
+
 enum class Probation : uint8_t { WAIT, CONFIRM, ROLLBACK };
 // The image's first run: confirm after a cloud write and minMs of uptime; roll back at maxMs without one.
 Probation probation(uint32_t upMs, bool cloudOk, uint32_t minMs, uint32_t maxMs);

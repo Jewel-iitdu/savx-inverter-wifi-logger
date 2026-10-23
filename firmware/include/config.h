@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.9.3"
+#define FW_VERSION "0.9.5"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -181,7 +181,10 @@ constexpr uint32_t METER_CRASH_CLEAR_MS = 6UL * 3600000UL;
 // Remote firmware update (0.9.2, net/OtaPlan.h): probation of a new image, download limits
 constexpr uint32_t OTA_PROBATION_MIN_MS = 120000;   // confirmed after a cloud write and 2 min of uptime
 constexpr uint32_t OTA_PROBATION_MAX_MS = 600000;   // no cloud write within 10 min: back to the previous image
-constexpr uint32_t OTA_MIN_HEAP = 45000;            // largest internal block needed for the TLS download
+// One TLS session: a ~17 KB record buffer and ~40 KB in all (internal RAM). 0.9.2/0.9.3 asked for a 45 KB block and
+// refused on the owner's logger (largest block 31.7 KB, the fragmentation its other TLS sessions run in).
+constexpr uint32_t OTA_MIN_BLOCK = 20000;
+constexpr uint32_t OTA_MIN_FREE = 45000;
 constexpr uint32_t OTA_TLS_TIMEOUT_S = 15;
 constexpr int32_t OTA_CONNECT_MS = 10000;
 constexpr uint32_t OTA_IO_MS = 20000;               // no data for this long: give up

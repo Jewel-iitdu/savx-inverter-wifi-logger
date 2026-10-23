@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "config.h"
+
 namespace ota {
 
 uint32_t versionCode(const char* v) {
@@ -83,6 +85,10 @@ Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt
   if (reqCode <= ownCode) return Go::NOT_NEWER;
   if (!repoSet) return Go::NO_REPO;
   return Go::START;
+}
+
+bool heapOk(uint32_t maxBlock, uint32_t freeHeap) {
+  return maxBlock >= cfg::OTA_MIN_BLOCK && freeHeap >= cfg::OTA_MIN_FREE;
 }
 
 Probation probation(uint32_t upMs, bool cloudOk, uint32_t minMs, uint32_t maxMs) {

@@ -76,6 +76,14 @@ void test_decide_once_and_only_newer() {
   TEST_ASSERT_EQUAL_INT((int)Go::NONE, (int)ota::decide(0, 6, 902, 5, true));
 }
 
+// 0.9.4: 0.9.2 refused the owner's first remote update with "low memory (31732)": it asked for a 45 KB block, but
+// the logger's largest free block is ~32 KB, the fragmentation its other TLS sessions run in.
+void test_heap_gate_accepts_the_owners_logger() {
+  TEST_ASSERT_TRUE(ota::heapOk(31732, 95000));
+  TEST_ASSERT_FALSE(ota::heapOk(15000, 95000));  // no room for the 16 KB TLS record buffer
+  TEST_ASSERT_FALSE(ota::heapOk(31732, 30000));  // not enough in total for a session
+}
+
 void test_probation() {
   using ota::Probation;
   const uint32_t MIN = 120000, MAX = 600000;
@@ -106,6 +114,7 @@ int main(int, char**) {
   RUN_TEST(test_repo_and_paths);
   RUN_TEST(test_parse_sums);
   RUN_TEST(test_decide_once_and_only_newer);
+  RUN_TEST(test_heap_gate_accepts_the_owners_logger);
   RUN_TEST(test_probation);
   RUN_TEST(test_cfg_ota_fields);
   return UNITY_END();
