@@ -10,6 +10,7 @@
 #include "app/App.h"
 #include "codes.h"
 #include "config.h"
+#include "meter/Meter.h"
 #include "model/JsonOut.h"
 #include "model/LiveJson.h"
 #include "model/TimeUtil.h"
@@ -29,6 +30,7 @@ static bool needsAdmin(const String& u, HTTPMethod m) {
   if (u.startsWith("/api/diag") || u.startsWith("/api/link") || u.startsWith("/api/capture")) return true;
   if (u == "/api/reboot" || u.startsWith("/api/safemode") || u == "/api/config") return true;
   if (u == "/telegram" || u == "/api/test") return true;
+  if (u == "/meter" || u == "/api/meter") return true;  // 0.9.0 grid meter set-up (local key)
   if (u == "/api/probe" && m == HTTP_POST) return true;
   return false;
 }
@@ -145,14 +147,16 @@ static void hRoot() {
               "<body style='font-family:sans-serif;padding:16px'><h1>Savx logger</h1>"
               "<p>The local UI is not in flash yet: run <code>pio run -e savx -t uploadfs</code>.</p>"
               "<p><a href='/api/live'>/api/live</a> &middot; <a href='/api/status'>/api/status</a> &middot; "
-              "<a href='/api/raw'>/api/raw</a> &middot; <a href='/telegram'>Telegram alerts</a> &middot; <a href='/update'>/update</a></p>");
+              "<a href='/api/raw'>/api/raw</a> &middot; <a href='/telegram'>Telegram alerts</a> &middot; <a href='/meter'>Grid meter</a> &middot; <a href='/update'>/update</a></p>");
 }
 
 static void hLive() {
-  char b[800];
+  char b[1000];
   uint32_t age;
   Sample s = app.latest(&age);
-  sampleToLiveJson(s, b, sizeof b, age == 0xFFFFFFFF ? -1 : (int32_t)age);
+  MeterLive ml;
+  bool m = meter::live(ml);
+  sampleToLiveJson(s, b, sizeof b, age == 0xFFFFFFFF ? -1 : (int32_t)age, m ? &ml : nullptr);
   sendJson(b);
 }
 
@@ -248,6 +252,24 @@ static void hStatus() {
   j.u("mailFail", up.mailsFail);
   j.i("hcCode", up.lastHcCode);
   j.close();
+  {
+    meter::Snap ms = meter::snap();
+    j.openObj("meter");
+    j.b("configured", ms.configured);
+    j.b("enabled", ms.enabled);
+    j.b("running", ms.running);
+    j.b("fresh", ms.fresh);
+    j.s("state", ms.state);
+    j.s("ip", ms.ip);
+    j.i("proto", ms.proto);
+    j.u("ageS", ms.ageS);
+    j.u("polls", ms.polls);
+    j.u("fails", ms.fails);
+    j.u("scans", ms.scans);
+    j.u("resets", ms.resets);
+    if (ms.fresh) meterLiveFields(j, ms.m);
+    j.close();
+  }
   {  // usage-threshold rules (r8 §4.1): rules:{n,rev,acat,st:[...]}
     RuleInfo ri = app.ruleInfo();
     j.openObj("rules");
@@ -541,6 +563,7 @@ static void hConfigGet() {
   j.i("summaryHour", c.summaryHour);
   j.i("gridOffFrom", c.gridOffFrom);
   j.i("gridOffTo", c.gridOffTo);
+  j.i("meter", c.meter);
   // secrets are write-only: only report whether they are set
   j.b("cloudSet", settings.hasStr("cloud", "apiKey") && settings.hasStr("cloud", "email"));
   j.b("ntfySet", settings.hasStr("alert", "ntfyTopic"));
@@ -581,7 +604,9 @@ static void hConfigPost() {
   i("summaryHour", c.summaryHour, -1, 23);
   i("gridOffFrom", c.gridOffFrom, -1, 1439);
   i("gridOffTo", c.gridOffTo, -1, 1439);
+  i("meter", c.meter, 0, 1);
   app.applyCloudCfg(c);
+  meter::setEnabled(c.meter != 0);
   if (server.hasArg("adminpw") && server.arg("adminpw").length() >= 6) settings.setAdminPassword(server.arg("adminpw"));
   // channel settings: write-only secrets ("-" clears), never echoed back
   bool chg = false;
@@ -641,6 +666,55 @@ async function add(){await post({tgAdd:'1'});$('st').textContent='Pairing open f
 load();
 </script></html>)HTML";
 
+// Grid meter set-up page (0.9.0, admin): device id and local key from tools/meter/get-key.sh (the owner types them).
+static const char METER_PAGE[] PROGMEM = R"HTML(<!doctype html><html lang=en><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Grid meter</title>
+<style>body{font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:16px;background:#0e1116;color:#e6edf3;line-height:1.45}
+input,select,button{font:inherit;width:100%;padding:10px;margin:6px 0 14px;border-radius:8px;border:1px solid #30363d;background:#161b22;color:inherit;box-sizing:border-box}
+button{background:#2563eb;border:0;color:#fff;cursor:pointer}button.s{background:#334155}#st{padding:12px;border-radius:8px;background:#161b22;margin:12px 0;white-space:pre-line}
+code{background:#161b22;padding:1px 5px;border-radius:4px}a{color:#7aa2f7}</style>
+<h1>Grid meter (Smart Life)</h1><div id=st>Loading…</div>
+<p>Read-only: the logger only asks the meter for its readings. Smart Life keeps all control (on/off, schedule).</p>
+<p>Run <code>tools/meter/get-key.sh</code> on the Mac, then copy the values from <code>.meter/secret.json</code>.</p>
+<label>Device ID<input id=id autocomplete=off spellcheck=false></label>
+<label>Local key (16 characters)<input id=key type=password autocomplete=off></label>
+<label>Protocol<select id=proto><option value=0>Auto</option><option value=35>3.5</option><option value=34>3.4</option><option value=33>3.3</option></select></label>
+<label>IP address (optional: the logger finds the meter on its own)<input id=ip autocomplete=off placeholder="e.g. 192.168.1.50"></label>
+<button onclick=save()>Save</button><button class=s onclick=clr()>Forget the meter</button>
+<p><a href="/">Logger home</a></p>
+<script>
+const $=id=>document.getElementById(id);let t=null;
+async function load(){try{const s=await (await fetch('/api/status')).json();const m=s.meter||{};
+let x=!m.configured?'Not set up yet.':!m.enabled?'Switched off in the app (Settings > Grid meter).':m.state;
+if(m.fresh)x='Reading ✓  '+m.mw+' W, '+m.mv+' V, '+(m.mkwh??'?')+' kWh total\nIP '+m.ip+', protocol '+(m.proto/10).toFixed(1)+', '+m.ageS+' s ago';
+x+='\npolls '+m.polls+', failures '+m.fails+', LAN searches '+m.scans;$('st').textContent=x;}catch(e){$('st').textContent='Could not read the logger status.'}
+clearTimeout(t);t=setTimeout(load,5000)}
+async function post(b){const r=await fetch('/api/meter',{method:'POST',body:new URLSearchParams(b)});const j=await r.json().catch(()=>({}));return [r.ok,j.msg||'']}
+async function save(){const [ok,msg]=await post({id:$('id').value.trim(),key:$('key').value,proto:$('proto').value,ip:$('ip').value.trim()});
+$('st').textContent=ok?'Saved. The first reading comes within about 15 s…':'Not saved: '+msg;if(ok)$('key').value='';setTimeout(load,4000)}
+async function clr(){if(!confirm('Forget the meter key?'))return;await post({clear:'1'});setTimeout(load,1000)}
+load();
+</script></html>)HTML";
+
+static void hMeterPage() { server.send_P(200, "text/html; charset=utf-8", METER_PAGE); }
+
+static void hMeterPost() {
+  if (server.arg("clear") == "1") {
+    meter::clearConfig();
+    sendMsg(200, "meter forgotten");
+    return;
+  }
+  char err[80];
+  String id = server.arg("id"), key = server.arg("key"), ip = server.arg("ip");
+  id.trim();
+  ip.trim();
+  if (!meter::saveConfig(id.c_str(), key.c_str(), server.arg("proto").toInt(), ip.c_str(), err, sizeof err)) {
+    sendMsg(400, err);
+    return;
+  }
+  sendMsg(200, "saved");
+}
+
 static void hTelegram() {
   server.send_P(200, "text/html; charset=utf-8", TELEGRAM_PAGE);
 }
@@ -689,6 +763,8 @@ void LocalWeb::begin() {
     server.on("/api/config", HTTP_POST, hConfigPost);
     server.on("/api/reboot", HTTP_POST, hReboot);
     server.on("/telegram", HTTP_GET, hTelegram);
+    server.on("/meter", HTTP_GET, hMeterPage);
+    server.on("/api/meter", HTTP_POST, hMeterPost);
     server.on("/api/test", HTTP_POST, hTest);
     server.on("/api/safemode/exit", HTTP_POST, hSafeExit);
     server.onNotFound([]() { sendMsg(404, "not found"); });

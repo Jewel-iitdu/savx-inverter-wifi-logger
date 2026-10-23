@@ -1,8 +1,10 @@
 // History: day (hist/<date>, optional overlay of a second day), week (h15,
 // 7 dates), month and year (daily range queries). All reads date-bounded.
+// Opens on today's day view, which is the former Today tab (pages/Today.tsx: live-updating minutes, energy and
+// cost today); #/today redirects here (app.tsx).
 import { useMemo, useState } from 'preact/hooks';
 import { useApp, useReportError } from '../context';
-import { useAsync, useStored } from '../lib/hooks';
+import { useAsync } from '../lib/hooks';
 import { addDays, addMonths, fmtDay, fmtMonth, fmtMonthShort, keyToEpoch, monthBounds, monthKey, todayKey } from '../lib/time';
 import { localizeDigits as dg, t } from '../lib/i18n';
 import { daySeries, histCsv, multiDaySeries, solarFraction, totalsFromRecs } from '../lib/series';
@@ -10,19 +12,22 @@ import { fmtNum, fmtPct, fmtTk, fmtWh, isNum } from '../lib/format';
 import { useDayMoney } from '../lib/money';
 import { sumMoney, type Money } from '../lib/tariff';
 import { MoneyCard } from '../components/MoneyCard';
-import { usePowerView, viewDailyMap, viewRecs } from '../lib/power';
+import { allDaysMetered, gridEnergyMetered, measuredEld, someDaysMetered, usePowerView, viewDailyMap, viewRecs, type PowerView } from '../lib/power';
 import { saveCsv } from '../lib/csv';
 import { getDailyMonth, getDailyYear, getHistDay, getWeek } from '../data/history';
 import type { Daily } from '../data/types';
 import { DayCharts } from '../components/DayCharts';
 import { UChart } from '../components/UChart';
+import { CompareCard } from '../components/CompareCard';
 import { Card, Empty, Segmented, Spinner, Tile } from '../components/ui';
+import { TodayView } from './Today';
 
 type Mode = 'day' | 'week' | 'month' | 'year';
 
 export function HistoryPage() {
-  const [mode, setMode] = useStored<Mode>('history.mode', 'day');
-  const [date, setDate] = useState(() => addDays(todayKey(), -1));
+  // Every visit opens on today's day view (the former Today tab).
+  const [mode, setMode] = useState<Mode>('day');
+  const [date, setDate] = useState(todayKey);
   const today = todayKey();
   const step = mode === 'day' ? 1 : mode === 'week' ? 7 : 0;
 
@@ -61,7 +66,7 @@ export function HistoryPage() {
           </button>
         </div>
       </Card>
-      {mode === 'day' && <DayView date={date} />}
+      {mode === 'day' && (date === today ? <TodayView /> : <DayView date={date} />)}
       {mode === 'week' && <WeekView end={date} />}
       {mode === 'month' && <MonthView ym={monthKey(date)} />}
       {mode === 'year' && <YearView year={date.slice(0, 4)} />}
@@ -69,28 +74,24 @@ export function HistoryPage() {
   );
 }
 
+/** A past day (today is TodayView). */
 function DayView({ date }: { date: string }) {
   const { source, theme } = useApp();
   const pv = usePowerView();
   const va = pv.unit === 'VA';
-  const pu = pv.unit;
-  const [compare, setCompare] = useState<string>('');
   const main = useAsync(() => getHistDay(source, date), [source, date]);
-  const other = useAsync(() => getHistDay(source, compare), [source, compare], !!compare);
-  useReportError('history', main.error ?? other.error);
-  const recs = useMemo(() => viewRecs(main.data ?? {}, pv), [main.data, pv.k]);
-  const otherRecs = useMemo(() => (other.data ? viewRecs(other.data, pv) : null), [other.data, pv.k]);
+  useReportError('history', main.error);
+  const recs = useMemo(() => viewRecs(main.data ?? {}, pv), [main.data, pv.k, pv.meter, pv.unit]);
   const s = useMemo(() => daySeries(date, recs), [date, recs]);
   const tot = useMemo(() => totalsFromRecs(recs), [recs]);
   const t0 = keyToEpoch(date, '0000');
-  const overlay = useMemo(() => {
-    if (!compare || !otherRecs) return null;
-    const a = daySeries(date, recs, 1, 1439);
-    const b = daySeries(date, otherRecs, 1, 1439); // mapped onto the same clock
-    return [a.xs, a.load, b.load, a.pv, b.pv];
-  }, [compare, otherRecs, recs, date]);
-  const frac = solarFraction(tot.eld, tot.egr);
   const money = useDayMoney(date, date);
+  // hist/ has no meter data: the day's grid kWh comes from daily/ (egm) when that day was fully metered
+  const dd = money.days?.[date];
+  const egrM = gridEnergyMetered(dd, pv);
+  const egr = egrM ? dd!.egm! : tot.egr;
+  const eld = (egrM ? measuredEld(dd) : null) ?? tot.eld; // metered day: grid + solar + battery, all measured
+  const frac = solarFraction(eld, egr);
 
   return (
     <>
@@ -103,14 +104,13 @@ function DayView({ date }: { date: string }) {
         }
       >
         {main.loading ? <Spinner /> : s.count === 0 ? <Empty>{t('hist.dayEmpty')}</Empty> : <DayCharts s={s} themeKey={theme} syncKey="hist-day" xRange={[t0, t0 + 86400]} va={va} />}
-        {date === todayKey() && <p class="muted small">{t('hist.todayHint')}</p>}
       </Card>
       {s.count > 0 && (
         <Card title={t('w.energy')}>
           <div class="tiles">
             <Tile label={t('w.solar')} value={fmtWh(tot.epv)} tone="pv" />
-            <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(tot.eld)} tone="load" />
-            <Tile label={t('tile.gridEst')} value={fmtWh(tot.egr)} tone="grid" />
+            <Tile label={egrM ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(eld)} tone="load" />
+            <Tile label={egrM ? t('tile.gridMeter') : t('tile.gridEst')} value={fmtWh(egr)} tone="grid" />
             <Tile label={t('tile.battInOut')} value={`${fmtWh(tot.ech, 1)} / ${fmtWh(tot.edis, 1)}`} tone="batt" />
             <Tile label={t('tile.solarFracEst')} value={frac === null ? '–' : dg(`${Math.round(frac * 100)} %`)} />
             <Tile label={t('tile.coverage')} value={dg(`${Math.round((tot.minutes / 1440) * 100)} %`)} sub={t('tile.coverageSub', { n: tot.minutes })} />
@@ -118,32 +118,7 @@ function DayView({ date }: { date: string }) {
         </Card>
       )}
       {s.count > 0 && <MoneyCard title={t('money.title')} date={date} m={money} />}
-      <Card title={t('hist.compare')}>
-        <div class="picker">
-          <input type="date" value={compare} max={todayKey()} onChange={(e) => setCompare(e.currentTarget.value)} aria-label={t('hist.compareDate')} />
-          {compare && (
-            <button type="button" class="btn-link" onClick={() => setCompare('')}>
-              {t('common.clear')}
-            </button>
-          )}
-        </div>
-        {compare && other.loading && <Spinner />}
-        {overlay && (
-          <UChart
-            data={overlay}
-            themeKey={theme}
-            timeOnly
-            xRange={[t0, t0 + 86400]}
-            series={[
-              { label: `${t('w.load')} ${date.slice(5)}`, color: '--c-load', unit: pu },
-              { label: `${t('w.load')} ${compare.slice(5)}`, color: '--c-load', unit: pu, dash: true },
-              { label: `PV ${date.slice(5)}`, color: '--c-pv', unit: 'W' },
-              { label: `PV ${compare.slice(5)}`, color: '--c-pv', unit: 'W', dash: true },
-            ]}
-            axes={[{ scale: 'y', label: pu === 'VA' ? 'W / VA' : 'W' }]}
-          />
-        )}
-      </Card>
+      <CompareCard date={date} recs={recs} />
     </>
   );
 }
@@ -154,7 +129,7 @@ function WeekView({ end }: { end: string }) {
   const pu = pv.unit;
   const week = useAsync(() => getWeek(source, end), [source, end]);
   useReportError('week', week.error);
-  const s = useMemo(() => (week.data ? multiDaySeries(week.data.map((d) => ({ ...d, recs: viewRecs(d.recs, pv) })), 15) : null), [week.data, pv.k]);
+  const s = useMemo(() => (week.data ? multiDaySeries(week.data.map((d) => ({ ...d, recs: viewRecs(d.recs, pv) })), 15) : null), [week.data, pv.k, pv.meter, pv.unit]);
   const start = addDays(end, -6);
   const x0 = keyToEpoch(start, '0000');
   return (
@@ -198,6 +173,10 @@ function WeekView({ end }: { end: string }) {
 }
 
 const tk0 = (v: number | undefined) => (isNum(v) ? fmtNum(v, 0) : '–');
+
+/** The "kWh · *grid …" note: from the grid meter on every day, on some days, or estimated. */
+const kwhNote = (m: Record<string, Daily> | null | undefined, p: PowerView) =>
+  allDaysMetered(m, p) ? t('hist.kwhNoteMeter') : someDaysMetered(m, p) ? t('hist.kwhNoteMixed') : t('hist.kwhNote');
 
 function DailyTable({ rows, money }: { rows: Array<[string, Daily]>; money: Record<string, Money> | null }) {
   return (
@@ -247,14 +226,14 @@ function MonthView({ ym }: { ym: string }) {
   const pv = usePowerView();
   const q = useAsync(() => getDailyMonth(source, ym), [source, ym]);
   useReportError('month', q.error);
-  const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k]);
+  const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k, pv.meter]);
   const rows = Object.entries(data ?? {}).sort((a, b) => (a[0] < b[0] ? -1 : 1));
   const tot = rows.reduce((s, [, r]) => ({ epv: s.epv + (r.epv ?? 0), eld: s.eld + (r.eld ?? 0), egr: s.egr + (r.egr ?? 0) }), { epv: 0, eld: 0, egr: 0 });
   const [first, last] = monthBounds(ym);
   const m = useDayMoney(first, last);
   const mt = m.money ? sumMoney(m.money, first, last) : null;
   return (
-    <Card title={fmtMonth(ym)} right={<span class="muted small">{t('hist.kwhNote')}</span>}>
+    <Card title={fmtMonth(ym)} right={<span class="muted small">{kwhNote(q.data, pv)}</span>}>
       {q.loading ? (
         <Spinner />
       ) : rows.length === 0 ? (
@@ -263,8 +242,8 @@ function MonthView({ ym }: { ym: string }) {
         <>
           <div class="tiles">
             <Tile label={t('w.solar')} value={fmtWh(tot.epv, 1)} tone="pv" />
-            <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(tot.eld, 1)} tone="load" />
-            <Tile label={t('tile.gridEst')} value={fmtWh(tot.egr, 1)} tone="grid" />
+            <Tile label={allDaysMetered(q.data, pv) ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(tot.eld, 1)} tone="load" />
+            <Tile label={allDaysMetered(q.data, pv) ? t('tile.gridMeter') : t('tile.gridEst')} value={fmtWh(tot.egr, 1)} tone="grid" />
           </div>
           <MoneyTiles m={mt} />
           <DailyTable rows={rows} money={m.money} />
@@ -280,7 +259,7 @@ function YearView({ year }: { year: string }) {
   const pv = usePowerView();
   const q = useAsync(() => getDailyYear(source, year), [source, year]);
   useReportError('year', q.error);
-  const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k]);
+  const data = useMemo(() => viewDailyMap(q.data, pv), [q.data, pv.k, pv.meter]);
   const m = useDayMoney(`${year}-01-01`, `${year}-12-31`);
   const yt = m.money ? sumMoney(m.money, `${year}-01-01`, `${year}-12-31`) : null;
   const mm = (k: string) => (m.money ? sumMoney(m.money, `${k}-01`, `${k}-31`) : null);
@@ -299,7 +278,7 @@ function YearView({ year }: { year: string }) {
     return [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
   }, [data]);
   return (
-    <Card title={dg(year)} right={<span class="muted small">{t('hist.kwhNote')}</span>}>
+    <Card title={dg(year)} right={<span class="muted small">{kwhNote(q.data, pv)}</span>}>
       {q.loading ? (
         <Spinner />
       ) : months.length === 0 ? (

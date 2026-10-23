@@ -4,9 +4,10 @@
 #include <math.h>
 
 #include "agg/Aggregator.h"
+#include "meter/MeterLive.h"
 #include "model/JsonOut.h"
 
-size_t sampleToLiveJson(const Sample& s, char* out, size_t cap, int32_t ageMs) {
+size_t sampleToLiveJson(const Sample& s, char* out, size_t cap, int32_t ageMs, const MeterLive* m) {
   JsonOut j(out, cap);
   j.open();
   j.u("ts", s.ts);
@@ -53,6 +54,7 @@ size_t sampleToLiveJson(const Sample& s, char* out, size_t cap, int32_t ageMs) {
   j.num("etot", s.etot, 1);
   if (s.q >= 0) j.i("q", s.q);
   if (ageMs >= 0) j.i("age_ms", ageMs);
+  if (m) meterLiveFields(j, *m);
   j.close();
   return j.ok() ? j.len() : 0;
 }

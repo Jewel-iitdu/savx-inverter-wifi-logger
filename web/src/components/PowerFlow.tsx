@@ -8,6 +8,8 @@ interface FlowProps {
   live: Live | null;
   stale: boolean;
   va?: boolean; // load and grid in VA (outputIsVA); solar and battery are DC, always W
+  gridVa?: boolean; // grid in VA (default: va); false when the grid power is the meter's real W (fw 0.9.0)
+  loadVa?: boolean; // load in VA (default: va); false when the load is worked out from the meter (line mode)
 }
 
 // The value sits on a chord about 46 units wide inside the r=27 circle: "415 W" gets 13.5, "1.30 kVA" about 9.6, and
@@ -54,7 +56,7 @@ const ICON_HOME = 'M3 11l9-8 9 8M5 9v12h14V9M10 21v-6h4v6';
 const ICON_BATT = 'M3 7h16v10H3zM21 10v4M6 10v4M9 10v4';
 const ICON_INV = 'M4 4h16v16H4zM8 12c1.3-2.6 2.7-2.6 4 0s2.7 2.6 4 0';
 
-export function PowerFlow({ live, stale, va = false }: FlowProps) {
+export function PowerFlow({ live, stale, va = false, gridVa = va, loadVa = va }: FlowProps) {
   const pv = live?.pvw;
   const load = live?.w;
   const bw = live?.bw;
@@ -76,7 +78,7 @@ export function PowerFlow({ live, stale, va = false }: FlowProps) {
         x={48}
         y={184}
         label={t('w.grid')}
-        value={gridPresent ? (isNum(gw) ? fmtPower(gw, va, 1) : dg(`${gv!.toFixed(0)} V`)) : t('common.Off')}
+        value={gridPresent ? (isNum(gw) ? fmtPower(gw, gridVa, 1) : dg(`${gv!.toFixed(0)} V`)) : t('common.Off')}
         sub={gridPresent ? `${dg(`${gv!.toFixed(0)} V`)} · ${onGrid ? t('pf.inUse') : t('pf.standby')}` : t('pf.noGrid')}
         color="--c-grid"
         icon={ICON_GRID}
@@ -85,7 +87,7 @@ export function PowerFlow({ live, stale, va = false }: FlowProps) {
         <rect x="-22" y="-22" width="44" height="44" rx="10" class="pf-node" style={{ stroke: 'var(--fg)' }} />
         <path d={ICON_INV} class="pf-icon" style={{ stroke: 'var(--fg)' }} transform="translate(-10,-10) scale(0.85)" />
       </g>
-      <Node x={292} y={118} label={t('w.load')} value={fmtPower(load, va, 1)} sub={isNum(live?.ld) ? dg(`${live!.ld}%`) : undefined} color="--c-load" icon={ICON_HOME} />
+      <Node x={292} y={118} label={t('w.load')} value={fmtPower(load, loadVa, 1)} sub={isNum(live?.ld) ? dg(`${live!.ld}%`) : undefined} color="--c-load" icon={ICON_HOME} />
       <Node
         x={170}
         y={214}

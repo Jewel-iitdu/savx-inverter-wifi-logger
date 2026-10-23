@@ -268,6 +268,28 @@ void test_paths_hosts_and_urls() {
   TEST_ASSERT_FALSE(upj::nudgePath("https://evil.com/macros/s/x/exec?k=1", b, sizeof b));
 }
 
+// 0.9.0: a change of only the planned grid-off window (or the meter switch) must count as a change. Before, cfgEq
+// ignored gridOffFrom/To, so a new window in the app was applied only after the next reboot.
+void test_cfg_eq_sees_grid_off_and_meter() {
+  AlertCfg a, b;
+  TEST_ASSERT_TRUE(upj::cfgEq(a, b));
+  b.gridOffFrom = 480;
+  TEST_ASSERT_FALSE(upj::cfgEq(a, b));
+  b = a;
+  b.gridOffTo = 930;
+  TEST_ASSERT_FALSE(upj::cfgEq(a, b));
+  b = a;
+  b.meter = 0;
+  TEST_ASSERT_FALSE(upj::cfgEq(a, b));
+  upj::CfgDoc c;
+  TEST_ASSERT_TRUE(upj::parseCfg("{\"meter\":0}", 11, c));
+  TEST_ASSERT_EQUAL(0, c.c.meter);
+  TEST_ASSERT_TRUE(upj::parseCfg("{\"meter\":7}", 11, c));
+  TEST_ASSERT_EQUAL(1, c.c.meter);  // out of range: default (on)
+  TEST_ASSERT_TRUE(upj::parseCfg("{}", 2, c));
+  TEST_ASSERT_EQUAL(1, c.c.meter);
+}
+
 void test_parse_cfg_auth_shallow_daily() {
   upj::CfgDoc c;
   const char* cfgJson = "{\"liveSec\":30,\"socLow\":25,\"bvLow\":19,\"quietFrom\":23,\"summaryHour\":-1,"
@@ -702,5 +724,6 @@ int main(int, char**) {
   RUN_TEST(test_budget_levels_and_backoff);
   RUN_TEST(test_network_watchdog);
   RUN_TEST(test_ntfy_and_telegram_bodies);
+  RUN_TEST(test_cfg_eq_sees_grid_off_and_meter);
   return UNITY_END();
 }

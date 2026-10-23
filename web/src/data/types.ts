@@ -44,6 +44,21 @@ export interface Live {
   etot?: number; // kWh lifetime reported by the inverter
   q?: number; // minute records waiting for upload
   gw?: number; // grid import power estimate W (r8 §3.9): (grid present && md=='L') ? w + AC charge W : 0
+  // fw 0.9.0 grid meter (Tuya/Smart Life breaker on the grid line before the inverter), read on the LAN.
+  // Present only while cfg.meter is on and the reading is fresh; any of them can be missing on its own.
+  // The app uses mw/egm in place of the gw/egr estimates (lib/power.ts); gw and egr themselves stay estimates.
+  mw?: number; // grid active power W (real W, never scaled by the power factor)
+  mv?: number; // V
+  mi?: number; // A
+  mpf?: number; // power factor 0–1
+  mhz?: number; // Hz
+  mrc?: number; // residual (leakage) current mA
+  mtc?: number; // meter temperature °C
+  mkwh?: number; // the meter's lifetime forward energy counter, kWh
+  mon?: number; // breaker: 1 = on (closed), 0 = off
+  egm?: number; // metered grid energy today, Wh (only when the whole day is metered)
+  mft?: number; // fw 0.9.1: the meter's alarm bitmap, bit i = METER_ALARMS[i] (lib/meter.ts); 0 = no alarm
+  mage?: number; // fw 0.9.1: seconds since the meter reading (the meter refreshes V/A/W about every 15 s)
 }
 
 /** /devices/inv1/status — in the 60 s PATCH. */
@@ -72,6 +87,8 @@ export interface Status {
   // FW-2 (firmware/README.md §8 D6)
   edrop?: number; // events dropped after 3 refused writes
   qg?: number; // quota-guard level 0-2
+  // fw 0.9.0 grid meter: "ok <proto> <age>s" while readings are fresh, else a short English state ("not reachable", …)
+  meter?: string;
 }
 
 /** /devices/inv1/meta — flat, boot and on change. */
@@ -143,6 +160,7 @@ export interface Daily {
   nf?: number;
   nw?: number;
   n?: number; // minutes with data
+  egm?: number; // fw 0.9.0: metered grid energy of the day, Wh (only on fully metered days; egr stays the estimate)
 }
 
 /** E-mail status of an event (r8 §3.6): device gates, then the mailer's result. */
@@ -189,6 +207,8 @@ export interface Cfg {
   summaryHour: number;
   testAlert: number;
   reprobe: number;
+  /** 0.9.0: 1 = read the grid meter and use its W/kWh (default when absent), 0 = off (inverter estimates only). Not in CFG_FIELDS. */
+  meter: number;
   /** serverTimestamp() (ms) bumped with every alerts/* change (r8 §3.4). Never in CFG_FIELDS. */
   alertsRev?: number;
 }
@@ -210,10 +230,11 @@ export const CFG_DEFAULTS: Cfg = {
   summaryHour: 21,
   testAlert: 0,
   reprobe: 0,
+  meter: 1,
 };
 
 export interface CfgField {
-  key: Exclude<keyof Cfg, 'testAlert' | 'reprobe' | 'alertsRev' | 'gridOffFrom' | 'gridOffTo'>;
+  key: Exclude<keyof Cfg, 'testAlert' | 'reprobe' | 'alertsRev' | 'gridOffFrom' | 'gridOffTo' | 'meter'>;
   label: string;
   unit: string;
   min: number;

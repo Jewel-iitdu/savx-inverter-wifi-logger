@@ -25,6 +25,8 @@ struct AlertCfg {
   // -1 = none. A grid loss at its start (+- GRID_OFF_GRACE_MIN) is labelled "planned" (log-only until 0.8.1, now
   // pushed once with its restore); still off after it -> a real alert.
   int gridOffFrom = -1, gridOffTo = -1;
+  // 0.9.0 (appended): read the grid meter (1) or not (0); the app uses its values only when 1 (Settings -> Grid meter)
+  int meter = 1;
 };
 
 struct AlertEvent {

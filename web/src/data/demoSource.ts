@@ -12,6 +12,24 @@ import { builtinEm, demoAlertsSeed, demoMailer, replayRules } from './demoAlerts
 const CAP_WH = 2560; // 24 V x 100 Ah LiFePO4 (8S)
 const PV_PEAK = 2600;
 const MAX_CHG_W = 2700;
+// Grid meter (fw 0.9.0): "installed" 12 days ago, so month views mix metered and estimated days. The load is VA
+// (REVO), the meter measures real W: about 0.91 of it. It is powered by the grid line, so it is silent in outages.
+const METER_DAYS = 12;
+const METER_PF = 0.91;
+const METER_BASE_KWH = 1286.4;
+const meterFrom = () => addDays(todayKey(), -METER_DAYS);
+// fw 0.9.1: the meter refreshes V/A/W every ~15 s while live goes up every 2 s, so a reading is reused with a growing
+// `mage` and the app scales the 2-second VA in between (lib/power.ts useLiveView). Alarm bitmap `mft` is 0; test
+// paths: ?demo=1&mft=<bitmap> (e.g. 131072 = leakage early warning) and ?demo=1&mrc=<mA> (e.g. 185: the owner's meter).
+const METER_POLL_S = 15;
+const demoParam = (k: string): number | undefined => {
+  try {
+    const v = new URLSearchParams(location.search).get(k);
+    return v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 function hashStr(s: string): number {
   let h = 2166136261;
@@ -307,6 +325,7 @@ function computeDaily(date: string): Daily | null {
   const tot = (k: keyof HistRec) => Math.round(hist.reduce((s, r) => s + ((r[k] as number) ?? 0), 0));
   const epv = tot('epv');
   return {
+    ...(date >= meterFrom() ? { egm: Math.round(tot('egr') * METER_PF) } : {}),
     epv,
     eld: tot('eld'),
     egr: tot('egr'),
@@ -374,24 +393,54 @@ function eventsFor(date: string, acks: Set<string>, alerts: AlertsDoc): Record<s
   return out;
 }
 
-function liveNow(cfg: Cfg): Live {
-  const now = nowSec();
-  const date = dateKey(now);
-  const p = localParts(now);
-  const t = Math.min(1439, p.hh * 60 + p.mm);
-  const m = simulateDay(date).minutes[t];
-  const j = rng(now)();
+/** The simulated inverter at epoch second `ts` (load VA and PV jitter around the minute's values). */
+function inverterAt(ts: number) {
+  const p = localParts(ts);
+  const m = simulateDay(dateKey(ts)).minutes[Math.min(1439, p.hh * 60 + p.mm)];
+  const j = rng(ts)();
   const jitter = (v: number, f: number) => v * (1 + (j - 0.5) * f);
   const w = Math.max(0, jitter(m.w, 0.08));
   const pvw = Math.max(0, jitter(m.pvw, 0.05));
   const bw = m.md === 'L' ? pvw : pvw - w;
+  return { m, j, w, pvw, bw };
+}
+
+function liveNow(cfg: Cfg): Live {
+  const now = nowSec();
+  const date = dateKey(now);
+  const { m, j, w, pvw, bw } = inverterAt(now);
   const bv = m.bv;
   const bi = bw / bv;
   const day = dailyFor(date);
   const wf = '0'.repeat(32).split('');
   if (!m.gridOk) wf[5] = '1';
   if (m.soc < 20) wf[12] = '1';
-  void cfg;
+  // Grid meter: only while cfg.meter is on and the grid (which powers the meter) is present. Its V/A/W come from the
+  // last 15-second reading (the inverter state at that second), the counters from now.
+  let meter: Partial<Live> = {};
+  const tm = now - (now % METER_POLL_S);
+  const at = inverterAt(tm);
+  if (cfg.meter !== 0 && m.gridOk && at.m.gridOk) {
+    const mw = at.m.md === 'L' ? Math.round(Math.max(0, at.w + at.bw - at.pvw) * METER_PF) : Math.round(3 + at.j * 2);
+    const mv = r1(at.m.gv + 1.2 + (at.j - 0.5) * 0.6);
+    const mpf = mw > 30 ? r2(METER_PF + (at.j - 0.5) * 0.04) : 0.45;
+    let kwh = METER_BASE_KWH;
+    for (const d of dateRange(meterFrom(), date)) kwh += (dailyFor(d)?.egm ?? 0) / 1000;
+    meter = {
+      mw,
+      mv,
+      mi: r2(mw / (mv * mpf)),
+      mpf,
+      mhz: r2(50 + (at.j - 0.5) * 0.08),
+      mrc: demoParam('mrc') ?? Math.round(2 + at.j * 3),
+      mtc: Math.round(33 + mw / 400),
+      mkwh: r2(kwh),
+      mon: 1,
+      mft: demoParam('mft') ?? 0,
+      mage: now - tm,
+    };
+    if (typeof day?.egm === 'number') meter.egm = day.egm;
+  }
   return {
     ts: now,
     lk: 1,
@@ -429,6 +478,7 @@ function liveNow(cfg: Cfg): Live {
     etot: 1874.2,
     q: 0,
     gw: m.md === 'L' && m.gridOk ? Math.round(w) : 0,
+    ...meter,
   };
 }
 
@@ -480,7 +530,7 @@ const META: Meta = {
 export function createDemoSource(): DataSource {
   // Rules were "saved" this morning and the logger has loaded them (status.arv === cfg.alertsRev).
   const seedRev = keyToEpoch(todayKey(), '0812') * 1000;
-  let cfg: Cfg = { ...CFG_DEFAULTS, liveSec: 5, alertsRev: seedRev };
+  let cfg: Cfg = { ...CFG_DEFAULTS, liveSec: 2, alertsRev: seedRev }; // the logger's live period with the meter (0.9.1)
   let arv = seedRev;
   let alerts: AlertsDoc = demoAlertsSeed();
   let mailerTest: MailerStatus['test'] | undefined;
@@ -494,7 +544,13 @@ export function createDemoSource(): DataSource {
   const statusWithRules = (): Status => {
     const st = statusNow();
     const n = Object.values(alerts.rules ?? {}).filter((r) => r.on).length;
-    return { ...st, arv, acat: 1, nrul: n, mjq: todaysMailed().length };
+    return { ...st, arv, acat: 1, nrul: n, mjq: todaysMailed().length, meter: meterStatus() };
+  };
+  /** status.meter as the logger writes it: the meter runs on the grid line, so it is unreachable while the grid is off. */
+  const meterStatus = (): string => {
+    if (cfg.meter === 0) return 'off (app setting)';
+    const l = liveNow(cfg);
+    return typeof l.mage === 'number' ? `ok 3.5 ${l.mage}s` : 'not reachable';
   };
   const todaysMailed = () => Object.values(eventsFor(todayKey(), acks, alerts)).filter((e) => e.em === 'sent');
   const alertStateNow = (): Record<string, AlertStateRec> => {
@@ -518,6 +574,13 @@ export function createDemoSource(): DataSource {
   };
   const setRules = (rules: Record<string, AlertRule>) => {
     alerts = { ...alerts, rules };
+  };
+
+  /** With cfg.meter = 0 the logger stops reading the meter, so today is no longer fully metered (no egm). */
+  const meterCfg = (date: string, d: Daily | null): Daily | null => {
+    if (!d || cfg.meter !== 0 || date !== todayKey() || !('egm' in d)) return d;
+    const { egm: _egm, ...rest } = d;
+    return rest;
   };
 
   function ticker<T>(make: () => T, everyMs: number, cb: (v: T) => void): Unsub {
@@ -557,7 +620,7 @@ export function createDemoSource(): DataSource {
       cb(cfg);
       return () => cfgListeners.delete(cb);
     },
-    onDaily: (date, cb) => ticker(() => dailyFor(date), 60000, cb),
+    onDaily: (date, cb) => ticker(() => meterCfg(date, dailyFor(date)), 60000, cb),
     onHistAdded(date, afterKey, cb) {
       let last = afterKey;
       const emit = () => {
@@ -581,7 +644,7 @@ export function createDemoSource(): DataSource {
       const today = todayKey();
       const start = from < addDays(today, -800) ? addDays(today, -800) : from;
       for (const d of dateRange(start, to < today ? to : today)) {
-        const v = dailyFor(d);
+        const v = meterCfg(d, dailyFor(d));
         if (v) out[d] = v;
       }
       return delay(out, 200);

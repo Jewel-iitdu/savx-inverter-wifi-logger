@@ -1,46 +1,60 @@
 import type { JSX } from 'preact';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import type { AuthUser, DataSource } from './data/source';
-import type { Meta } from './data/types';
+import type { Cfg, Meta } from './data/types';
 import { Ctx, type AppCtx } from './context';
 import { useStored, useSubscription, useVisible } from './lib/hooks';
 import { Banner, LangButton, Spinner } from './components/ui';
 import { LoginPage } from './pages/Login';
 import { LivePage } from './pages/Live';
-import { TodayPage } from './pages/Today';
 import { HistoryPage } from './pages/History';
+import { MeterPage } from './pages/Meter';
 import { EnergyPage } from './pages/Energy';
 import { AlertsPage } from './pages/Alerts';
 import { SettingsPage } from './pages/Settings';
 import { LANG_KEY, isLang, setCurrentLang, t, tj, type Key, type Lang } from './lib/i18n';
 
-type RouteId = 'live' | 'today' | 'history' | 'energy' | 'alerts' | 'settings';
+type RouteId = 'live' | 'history' | 'meter' | 'energy' | 'alerts' | 'settings';
 
 // 24x24 stroke icons
 const ROUTES: Array<{ id: RouteId; label: Key; icon: string; page: () => JSX.Element }> = [
   { id: 'live', label: 'nav.live', icon: 'M13 2L4 14h7l-1 8 9-12h-7z', page: LivePage },
-  { id: 'today', label: 'nav.today', icon: 'M3 17l5-6 4 4 8-9M3 21h18', page: TodayPage },
   { id: 'history', label: 'nav.history', icon: 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2', page: HistoryPage },
+  // a dial: the grid meter (read-only)
+  { id: 'meter', label: 'nav.meter', icon: 'M3.5 17a8.5 8.5 0 0 1 17 0M12 17l4-5M3 20.5h18', page: MeterPage },
   { id: 'energy', label: 'nav.energy', icon: 'M5 21V11M10 21V5M15 21v-8M20 21v-4', page: EnergyPage },
   { id: 'alerts', label: 'nav.alerts', icon: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4', page: AlertsPage },
   { id: 'settings', label: 'nav.settings', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z', page: SettingsPage },
 ];
 
-/** '#/alerts/rules/r03' -> 'alerts'. '#/events' (the page's old name) is an alias of Alerts (r8 §6.1). */
+/** Old page names: '#/events' is Alerts (r8 §6.1); '#/today' is History, which opens on today (2026-10-24). */
+const ALIASES: Record<string, RouteId> = { events: 'alerts', today: 'history' };
+const firstSegment = () => location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
+
+/** '#/alerts/rules/r03' -> 'alerts'. */
 function readRoute(): RouteId {
-  const first = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
-  const id = (first === 'events' ? 'alerts' : first) as RouteId;
+  const first = firstSegment();
+  const id = (ALIASES[first] ?? first) as RouteId;
   return ROUTES.some((r) => r.id === id) ? id : 'live';
+}
+
+/** '#/today' (old bookmarks, the Android app's last page) becomes '#/history' in place, without a history entry. */
+function redirectToday() {
+  if (firstSegment() === 'today') history.replaceState(history.state, '', `${location.pathname}${location.search}#/history`);
 }
 
 /** Page + segment ('alerts/rules'); opening or closing a sheet ('alerts/rules/r03') keeps the scroll position. */
 const scrollKey = () => location.hash.replace(/^#\/?/, '').split(/[?]/)[0].split('/').slice(0, 2).join('/');
 
 function useRoute(): RouteId {
-  const [route, setRoute] = useState<RouteId>(readRoute);
+  const [route, setRoute] = useState<RouteId>(() => {
+    redirectToday();
+    return readRoute();
+  });
   useEffect(() => {
     let last = scrollKey();
     const on = () => {
+      redirectToday();
       setRoute(readRoute());
       const key = scrollKey();
       if (key !== last && !(key.startsWith(last + '/') || last.startsWith(key + '/'))) window.scrollTo(0, 0);
@@ -122,6 +136,9 @@ export function App({ source }: { source: DataSource }) {
   useEffect(() => setDataErr(null), [user?.uid]);
 
   const meta = useSubscription<Meta | null>((cb, err) => source.onMeta(cb, err), [source, user?.uid], visible && !!user);
+  // cfg.meter gates the grid-meter figures on every page (lib/power.ts). Pages that show cfg report its errors.
+  const cfg = useSubscription<Partial<Cfg> | null>((cb, err) => source.onCfg(cb, err), [source, user?.uid], visible && !!user);
+  const meter = cfg.value?.meter !== 0;
 
   const reportError = useCallback((where: string, err: Error) => {
     const denied = /permission[_ ]denied/i.test(err.message) || (err as { code?: string }).code === 'PERMISSION_DENIED';
@@ -134,10 +151,10 @@ export function App({ source }: { source: DataSource }) {
   const ctx: AppCtx | null = useMemo(
     () =>
       user
-        ? { source, user, meta: meta.value ?? null, visible, theme, themePref, setThemePref, lang, setLang, reportError }
+        ? { source, user, meta: meta.value ?? null, meter, visible, theme, themePref, setThemePref, lang, setLang, reportError }
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [source, user, meta.value, visible, theme, themePref, lang, reportError],
+    [source, user, meta.value, meter, visible, theme, themePref, lang, reportError],
   );
 
   if (user === undefined)

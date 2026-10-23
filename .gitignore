@@ -10,6 +10,10 @@ firmware/unpacked_fs/
 firmware/include/secrets.h
 web/.env*
 !web/.env.example
+# Grid meter local key and the key tool's Python env (tools/meter/get-key.sh)
+.meter/
+tools/meter/.venv/
+tools/meter/__pycache__/
 
 # Firebase CLI cache and the local project alias (copy .firebaserc.example to .firebaserc)
 .firebase/

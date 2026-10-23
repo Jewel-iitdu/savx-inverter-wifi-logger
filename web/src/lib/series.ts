@@ -109,12 +109,12 @@ export function histCsv(date: string, recs: Record<string, HistRec>): string {
   return toCsv(['date', 'time_local', 'epoch_utc', ...HIST_FIELDS], rows);
 }
 
-export const DAILY_FIELDS: Array<keyof Daily> = ['epv', 'eld', 'egr', 'ech', 'edis', 'epvi', 'pvx', 'wx', 'bvn', 'bvx', 'socn', 'socx', 'gout', 'nf', 'nw', 'n'];
+export const DAILY_FIELDS: Array<keyof Daily> = ['epv', 'eld', 'egr', 'ech', 'edis', 'epvi', 'pvx', 'wx', 'bvn', 'bvx', 'socn', 'socx', 'gout', 'nf', 'nw', 'n', 'egm'];
 
 export function dailyCsv(rows: Record<string, Daily>): string {
   const keys = Object.keys(rows).sort();
   return toCsv(
-    ['date', ...DAILY_FIELDS.map((f) => (['epv', 'eld', 'egr', 'ech', 'edis', 'epvi'].includes(f) ? `${f}_wh` : f))],
+    ['date', ...DAILY_FIELDS.map((f) => (['epv', 'eld', 'egr', 'ech', 'edis', 'epvi', 'egm'].includes(f) ? `${f}_wh` : f))],
     keys.map((d) => [d, ...DAILY_FIELDS.map((f) => rows[d][f] as CsvValue)]),
   );
 }

@@ -172,6 +172,7 @@ size_t statusJson(const StatusDoc& s, char* out, size_t n) {
   j.u("edrop", s.edrop);
   j.i("qg", s.qg);
   if (s.ruleErr[0]) j.s("ruleErr", s.ruleErr);
+  if (s.meter[0]) j.s("meter", s.meter);
   j.close();
   return j.ok() ? j.len() : 0;
 }
@@ -296,6 +297,14 @@ int tgPairChats(const char* json, size_t n, char (*out)[24], int maxOut, long lo
   return cnt;
 }
 
+bool cfgEq(const AlertCfg& a, const AlertCfg& b) {
+  return a.liveSec == b.liveSec && a.socLow == b.socLow && a.bvLow == b.bvLow && a.bvHigh == b.bvHigh &&
+         a.tempHigh == b.tempHigh && a.loadHigh == b.loadHigh && a.notifyRepeatMin == b.notifyRepeatMin &&
+         a.keepHistDays == b.keepHistDays && a.keepEventDays == b.keepEventDays && a.quietFrom == b.quietFrom &&
+         a.quietTo == b.quietTo && a.summaryHour == b.summaryHour && a.testAlert == b.testAlert &&
+         a.reprobe == b.reprobe && a.gridOffFrom == b.gridOffFrom && a.gridOffTo == b.gridOffTo && a.meter == b.meter;
+}
+
 bool parseCfg(const char* json, size_t n, CfgDoc& out) {
   out = CfgDoc();
   JsonDocument doc(jsonalloc::get());
@@ -320,6 +329,7 @@ bool parseCfg(const char* json, size_t n, CfgDoc& out) {
   if (numIn(o["gridOffTo"], -1, 1439, v)) c.gridOffTo = (int)v;
   if (numIn(o["quietTo"], 0, 23, v)) c.quietTo = (int)v;
   if (numIn(o["summaryHour"], -1, 23, v)) c.summaryHour = (int)v;
+  if (numIn(o["meter"], 0, 1, v)) c.meter = (int)v;  // 0.9.0 grid meter on/off
   if (numIn(o["testAlert"], 0, 1e15, v)) c.testAlert = (uint32_t)fmod(v, 4294967296.0);
   if (numIn(o["reprobe"], 0, 1e15, v)) c.reprobe = (uint32_t)fmod(v, 4294967296.0);
   if (numIn(o["alertsRev"], 0, 1e16, v)) {

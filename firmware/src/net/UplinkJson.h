@@ -57,6 +57,7 @@ struct StatusDoc {
   uint32_t edrop = 0;     // FW-2: events dropped after permanent RTDB errors
   int qg = 0;             // FW-2: quota guard level 0/1/2
   char ruleErr[41] = "";  // r8 §4.9: last alerts.json problem ("" omitted)
+  char meter[41] = "";    // 0.9.0 grid meter state, e.g. "ok 3.4 2 s" ("" omitted: not set up)
 };
 size_t statusJson(const StatusDoc& s, char* out, size_t n);
 
@@ -73,6 +74,10 @@ bool hcPath(const char* cfg, bool fail, char* path, size_t n);
 bool nudgePath(const char* url, char* path, size_t n);
 
 // ---------------------------------------------------------------------------------------------- parsers
+// Same settings? (the uplink re-applies cfg only when it changed; 0.9.0 also compares the planned grid-off window,
+// which before was applied only after a reboot, and the meter switch)
+bool cfgEq(const AlertCfg& a, const AlertCfg& b);
+
 struct CfgDoc {
   AlertCfg c;
   double alertsRev = 0;

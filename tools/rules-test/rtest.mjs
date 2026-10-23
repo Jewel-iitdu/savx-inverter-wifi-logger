@@ -98,6 +98,14 @@ await t('P23 owner still writes cfg/liveSec', 'owner', 'PUT', 'cfg/liveSec', 10,
 await t('N34 mailer n = 21', 'mailer', 'PUT', `mailq/${now}-r05-o/n`, 21, 401);
 await t('N35 owner still cannot write live', 'owner', 'PUT', 'live', { ts: now, lk: 1 }, 401);
 await t('N36 mailer cannot write cfg', 'mailer', 'PUT', 'cfg/liveSec', 10, 401);
+// 0.9.0 grid meter: the owner's switch, and the device's meter fields in live / daily / status (no new nodes)
+await t('P70 owner switches the grid meter off', 'owner', 'PUT', 'cfg/meter', 0, 'ok');
+await t('P71 owner switches the grid meter on', 'owner', 'PUT', 'cfg/meter', 1, 'ok');
+await t('N70 cfg/meter only 0 or 1', 'owner', 'PUT', 'cfg/meter', 2, 401);
+await t('N71 cfg/meter not a string', 'owner', 'PUT', 'cfg/meter', '1', 401);
+await t('P72 device live with meter fields', 'device', 'PUT', 'live', { ts: now, lk: 1, gw: 230, mw: 211, mv: 244.4, mi: 1.29, mpf: 0.66, mhz: 50.4, mrc: 196, mtc: 37, mkwh: 305.03, mon: 1, egm: 2150 }, 'ok');
+await t('P73 device daily with egm', 'device', 'PATCH', '', { [`daily/${D}/egm`]: 2150 }, 'ok');
+await t('P74 device status with the meter state', 'device', 'PATCH', 'status', { meter: 'not reachable' }, 'ok');
 await t('N37 mailer cannot read meta', 'mailer', 'GET', 'meta', undefined, 401);
 await t('N38 test request from the future (+1 h)', 'owner', 'PUT', 'mailq/test', { ts: now + 3600 }, 401);
 await t('N39 rule name 41 chars', 'owner', 'PUT', 'alerts/rules/r02', rule({ name: 'x'.repeat(41) }), 401);

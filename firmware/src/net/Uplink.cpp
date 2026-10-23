@@ -9,6 +9,7 @@
 #include "config.h"
 #include "hal/ArduinoHal.h"
 #include "model/JsonOut.h"
+#include "meter/Meter.h"
 #include "model/LiveJson.h"
 #include "model/TimeUtil.h"
 #include "net/Backfill.h"
@@ -74,6 +75,8 @@ bool hcFirst_ = true;
 uint32_t accHs_ = 0, accRq_ = 0;
 mrec::Daily fin_;
 bool finHave_ = false;
+bool meterFinHave_ = false;  // 0.9.0 grid meter: a finished day's metered energy to write
+int32_t meterFinDay_ = 0, meterFinWh_ = -1;
 Prune prune_ = Prune::IDLE;
 int32_t pruneDoneDay_ = 0, stuckDay_ = 0;
 int32_t* pruneDays_ = nullptr;
@@ -305,17 +308,20 @@ bool doLive(uint32_t now, uint32_t ep) {
   tLive_ = now;
   uint32_t age;
   Sample s = app.latest(&age);
-  char b[900];
+  MeterLive ml;
+  bool haveMeter = meter::live(ml);
+  char b[1000];
   size_t n;
   if (s.lk) {
     if (!tu::epochValid(s.ts)) s.ts = ep;
-    n = sampleToLiveJson(s, b, sizeof b);
-  } else {  // no valid inverter reply within 15 s: only "the logger is alive, the link is not"
+    n = sampleToLiveJson(s, b, sizeof b, -1, haveMeter ? &ml : nullptr);
+  } else {  // no valid inverter reply within 15 s: only "the logger is alive, the link is not" (+ the grid meter)
     JsonOut j(b, sizeof b);
     j.open();
     j.u("ts", ep);
     j.i("lk", 0);
     j.i("q", (long long)minuteQueue.pending());
+    if (haveMeter) meterLiveFields(j, ml);
     j.close();
     n = j.len();
   }
@@ -351,6 +357,11 @@ size_t buildStatus(char* out, size_t cap, uint32_t ep) {
   s.edrop = st_.edrop;
   s.qg = budget.level();
   snprintf(s.ruleErr, sizeof s.ruleErr, "%s", st_.ruleErr[0] ? st_.ruleErr : ri.err);
+  meter::Snap ms = meter::snap();
+  if (ms.configured || !ms.enabled) {
+    if (ms.fresh) snprintf(s.meter, sizeof s.meter, "ok %d.%d %lus", ms.proto / 10, ms.proto % 10, (unsigned long)ms.ageS);
+    else snprintf(s.meter, sizeof s.meter, "%s", ms.state);
+  }
   return upj::statusJson(s, out, cap);
 }
 
@@ -389,8 +400,10 @@ bool doMinute(uint32_t now, uint32_t ep, int32_t today) {
       char dk[12], path[24];
       tu::dateKeyFromDay(b.day, dk, sizeof dk);
       if (ad.day == b.day) {  // the aggregator's running day: full object incl. nf / nw / epvi
-        char dj[320];
+        char dj[340];
         if (mrec::toDailyJson(ad, dj, sizeof dj)) {
+          int32_t egm = meter::egmFor(ad.day);  // this PUT replaces the day's object: keep the metered energy in it
+          if (egm >= 0) jsonAppendInt(dj, sizeof dj, "egm", egm);
           snprintf(path, sizeof path, "daily/%s", dk);
           p.add(path, dj);
         }
@@ -437,12 +450,6 @@ bool doMinute(uint32_t now, uint32_t ep, int32_t today) {
 }
 
 // ------------------------------------------------------------------------------------------- cfg / alerts
-bool cfgEq(const AlertCfg& a, const AlertCfg& b) {
-  return a.liveSec == b.liveSec && a.socLow == b.socLow && a.bvLow == b.bvLow && a.bvHigh == b.bvHigh &&
-         a.tempHigh == b.tempHigh && a.loadHigh == b.loadHigh && a.notifyRepeatMin == b.notifyRepeatMin &&
-         a.keepHistDays == b.keepHistDays && a.keepEventDays == b.keepEventDays && a.quietFrom == b.quietFrom &&
-         a.quietTo == b.quietTo && a.summaryHour == b.summaryHour && a.testAlert == b.testAlert && a.reprobe == b.reprobe;
-}
 
 bool doCfg(uint32_t now) {
   if ((!firstCfg_ && (uint32_t)(now - tCfg_) < budget.cfgPollMs()) || !canGo()) return false;
@@ -455,10 +462,11 @@ bool doCfg(uint32_t now) {
     snprintf(st_.lastError, sizeof st_.lastError, "cfg: not JSON");
     return true;
   }
-  if (!haveCloudCfg_ || !cfgEq(c.c, cloudCfg_)) {
+  if (!haveCloudCfg_ || !upj::cfgEq(c.c, cloudCfg_)) {
     cloudCfg_ = c.c;
     app.applyCloudCfg(c.c);  // aggTask: thresholds, quiet hours, testAlert -> TEST_ALERT, reprobe
   }
+  meter::setEnabled(c.c.meter != 0);  // acts on changes only (off -> on also re-arms after a crash stop)
   haveCloudCfg_ = true;
   cloudRev_ = c.hasRev ? c.alertsRev : 0;
   st_.cloudAlertsRev = cloudRev_;
@@ -523,17 +531,33 @@ bool doFinished() {
     finHave_ = true;
   }
   if (!finHave_ || !canGo()) return false;
-  char dk[12], path[24], dj[320];
+  char dk[12], path[24], dj[340];
   tu::dateKeyFromDay(fin_.day, dk, sizeof dk);
   if (!mrec::toDailyJson(fin_, dj, sizeof dj)) {
     finHave_ = false;
     return false;
   }
+  int32_t egm = meter::egmFor(fin_.day);
+  if (egm >= 0) jsonAppendInt(dj, sizeof dj, "egm", egm);
   snprintf(path, sizeof path, "daily/%s", dk);
   upj::Patch p(body_, bodyCap_);
   p.add(path, dj);
   size_t n = p.close();
   if (ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), "final daily")) finHave_ = false;
+  return true;
+}
+
+bool doMeterDay() {
+  if (!meterFinHave_ && meter::takeFinishedDay(meterFinDay_, meterFinWh_)) meterFinHave_ = true;
+  if (!meterFinHave_ || !canGo()) return false;
+  char dk[12], path[32], v[16];
+  tu::dateKeyFromDay(meterFinDay_, dk, sizeof dk);
+  snprintf(path, sizeof path, "daily/%s/egm", dk);
+  snprintf(v, sizeof v, "%ld", (long)meterFinWh_);
+  upj::Patch p(body_, bodyCap_);
+  p.add(path, v);
+  size_t n = p.close();
+  if (ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), "meter daily")) meterFinHave_ = false;
   return true;
 }
 
@@ -777,6 +801,7 @@ void loop() {
   if (ops < 3) step(doAlerts(millis()));
   if (ops < 3) step(doMeta(millis()));
   if (ops < 3) step(doFinished());
+  if (ops < 3) step(doMeterDay());
   if (ops < 3) step(doMtd(millis()));
   if (ops < 3) step(doDiag(millis()));
   if (ops < 3) step(doPrune(millis(), ep, today));

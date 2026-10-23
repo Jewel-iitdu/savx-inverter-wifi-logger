@@ -8,6 +8,8 @@ export interface AppCtx {
   source: DataSource;
   user: AuthUser;
   meta: Meta | null;
+  /** cfg.meter !== 0 (fw 0.9.0 grid meter on; also while cfg loads): lib/power.ts then uses the meter's W and kWh. */
+  meter: boolean;
   visible: boolean;
   /** Resolved colour theme; charts re-create when it changes. */
   theme: 'light' | 'dark';

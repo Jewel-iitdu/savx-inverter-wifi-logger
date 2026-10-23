@@ -7,7 +7,7 @@ import { fmtAgo, fmtDateTime, fmtDuration, nowSec } from '../lib/time';
 import { fmtBytes, fmtNum, isNum } from '../lib/format';
 import { idbClear } from '../lib/idb';
 import { CFG_DEFAULTS, CFG_FIELDS, validateCfgValue, type Cfg, type Live, type Status } from '../data/types';
-import { Banner, Card, KV, Segmented, Switch } from '../components/ui';
+import { Banner, Card, KV, Segmented, Switch, ToggleRow } from '../components/ui';
 import { outputIsVA } from '../lib/decode';
 import { PF_DEFAULT, PF_MAX, PF_MIN, parsePf, usePowerPrefs } from '../lib/power';
 import { localizeDigits as dg, t, tj } from '../lib/i18n';
@@ -33,6 +33,8 @@ export function SettingsPage() {
   const [goDraft, setGoDraft] = useState<{ on: boolean; from: string; to: string } | null>(null);
   const [goMsg, setGoMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [goSaving, setGoSaving] = useState(false);
+  const [meterMsg, setMeterMsg] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const [meterSaving, setMeterSaving] = useState(false);
 
   useEffect(() => setDraft({}), [cfgSub.value]);
 
@@ -158,6 +160,30 @@ export function SettingsPage() {
             </div>
           );
         })()}
+      </Card>
+
+      <Card title={t('set.meter')}>
+        <ToggleRow
+          label={t('set.meterUse')}
+          aria={t('set.meter')}
+          help={t('set.meterHelp')}
+          checked={cfg.meter !== 0}
+          disabled={meterSaving || cfgSub.value === undefined}
+          onChange={async (on) => {
+            if (on === (cfg.meter !== 0)) return;
+            setMeterSaving(true);
+            setMeterMsg(null);
+            try {
+              await source.setCfg({ meter: on ? 1 : 0 });
+              setMeterMsg({ tone: 'ok', text: t('set.savedCfg') });
+            } catch (e) {
+              setMeterMsg({ tone: 'bad', text: t('set.notSaved', { msg: e instanceof Error ? e.message : String(e) }) });
+            } finally {
+              setMeterSaving(false);
+            }
+          }}
+        />
+        {meterMsg && <Banner tone={meterMsg.tone}>{meterMsg.text}</Banner>}
       </Card>
 
       <Card title={t('set.actions')}>
@@ -292,6 +318,9 @@ export function SettingsPage() {
                   value={pp.pf}
                   onInput={(e) => pp.setPf((e.target as HTMLInputElement).value)}
                 />
+                {pp.pf.trim() !== '' && parsePf(pp.pf) !== Number(pp.pf) && (
+                  <span class="field-h bad">{t('set.pfBad', { min: PF_MIN, max: PF_MAX, def: PF_DEFAULT })}</span>
+                )}
               </div>
             )}
             {pp.unit === 'W' && (

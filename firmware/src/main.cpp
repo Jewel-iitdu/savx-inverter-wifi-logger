@@ -17,6 +17,7 @@
 #include "app/App.h"
 #include "app/Console.h"
 #include "config.h"
+#include "meter/Meter.h"
 #include "model/JsonAlloc.h"
 #include "net/TimeSync.h"
 #include "net/Uplink.h"
@@ -116,6 +117,7 @@ void setup() {
     uplink::begin();
     startUplinkTask();
   }
+  meter::begin(safe);  // 0.9.0 grid meter (own low-priority task; off in safe mode)
   console::begin();
 }
 

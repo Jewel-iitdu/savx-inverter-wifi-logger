@@ -21,6 +21,8 @@ export function useMonthStart(): number | undefined {
 export interface DayMoney {
   /** Per-day money from the billing-month start of `from` to `to`; null while loading. */
   money: Record<string, Money> | null;
+  /** The daily/ records (with `override`) the money is computed from, as stored; null while loading. */
+  days: Record<string, Daily> | null;
   monthStart: number | undefined;
   /** First day of the billing month that contains `d`. */
   cycleOf: (d: string) => string;
@@ -39,12 +41,17 @@ export function useDayMoney(from: string, to: string, override?: Record<string, 
   const q = useAsync(() => getDailySpan(source, cs, end), [source, cs, end], !!cs);
   useReportError('money', q.error);
   const ovKey = JSON.stringify(override ?? null);
-  const money = useMemo(() => {
-    if (!monthStart || !q.data) return null;
-    const days: Record<string, Daily> = { ...q.data };
-    for (const [d, v] of Object.entries(override ?? {})) if (v) days[d] = v;
-    return dayMoney(viewDailyMap(days, bv) ?? {}, (d) => cycleStart(d, monthStart));
+  const days = useMemo(() => {
+    if (!q.data) return null;
+    const out: Record<string, Daily> = { ...q.data };
+    for (const [d, v] of Object.entries(override ?? {})) if (v) out[d] = v;
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q.data, monthStart, bv.k, ovKey]);
-  return { money, monthStart, cycleOf: (d) => cycleStart(d, monthStart ?? EMAIL_DEFAULTS.monthStart) };
+  }, [q.data, ovKey]);
+  // viewDailyMap puts the grid meter's kWh (egm) in place of the estimate on metered days when cfg.meter is on.
+  const money = useMemo(() => {
+    if (!monthStart || !days) return null;
+    return dayMoney(viewDailyMap(days, bv) ?? {}, (d) => cycleStart(d, monthStart));
+  }, [days, monthStart, bv.k, bv.meter]);
+  return { money, days, monthStart, cycleOf: (d) => cycleStart(d, monthStart ?? EMAIL_DEFAULTS.monthStart) };
 }

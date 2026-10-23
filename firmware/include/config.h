@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.8.1"
+#define FW_VERSION "0.9.1"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -158,5 +158,21 @@ constexpr uint32_t PORTAL_TIMEOUT_S = 600;   // on-demand portal closes after 10
 constexpr uint32_t STACK_INV = 12288, STACK_AGG = 10240, STACK_UPLINK = 16384;  // d1: 8/8/16 KB; +headroom for the probe and alert texts
 constexpr int PRIO_INV = 5, PRIO_AGG = 4, PRIO_UPLINK = 3;
 constexpr int CORE_INV = 1, CORE_AGG = 1, CORE_UPLINK = 0;
+
+// Grid meter (0.9.0, src/meter/Meter.h): Smart Life / Tuya breaker on the LAN, read-only
+constexpr uint32_t STACK_METER = 8192;
+constexpr int PRIO_METER = 1, CORE_METER = 0;
+constexpr uint16_t METER_PORT = 6668;
+constexpr uint32_t METER_POLL_MS = 15000;          // one short connection per poll, closed straight away
+constexpr uint32_t METER_FRESH_MS = 60000;         // older readings are not uploaded
+constexpr int32_t METER_CONNECT_MS = 1500;
+constexpr int32_t METER_SCAN_CONNECT_MS = 300;     // per address while searching the /24
+constexpr uint32_t METER_REPLY_MS = 4000;
+constexpr int METER_PHASE_DP = 6;                  // phase_a (V, A, W): refreshed after each status query
+constexpr int METER_FAILS_BEFORE_SCAN = 3;         // then the saved IP is presumed moved (DHCP)
+constexpr uint32_t METER_RESCAN_MIN_MS = 10UL * 60000UL, METER_RESCAN_MAX_MS = 60UL * 60000UL;
+constexpr uint32_t METER_DAY_SAVE_MS = 30UL * 60000UL;   // day accounting to NVS (and at every roll-over)
+constexpr uint8_t METER_MAX_CRASHES = 2;           // crashes with the meter on -> meter reading stops (re-arm)
+constexpr uint32_t METER_CRASH_CLEAR_MS = 6UL * 3600000UL;
 
 }  // namespace cfg

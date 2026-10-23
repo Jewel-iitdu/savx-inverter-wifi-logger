@@ -4,7 +4,7 @@ import { fmtAgo, fmtClock, fmtDateKey, fmtTime, localParts, nowSec, todayKey } f
 import { localizeDigits as dg, t } from '../lib/i18n';
 import { BATT_STANDBY_W, fmtNum, fmtPct, fmtPower, fmtW, fmtWh, isNum } from '../lib/format';
 import { activeAlarms, modeLong, modeName, modeTone } from '../lib/decode';
-import { usePowerView, viewDaily, viewLive } from '../lib/power';
+import { gridEnergyMetered, gridPowerMetered, loadPowerMeasured, useLiveView, usePowerView, viewDaily } from '../lib/power';
 import { solarFraction } from '../lib/series';
 import type { Cfg, Daily, Live as LiveT, Status } from '../data/types';
 import { PowerFlow } from '../components/PowerFlow';
@@ -37,7 +37,8 @@ export function LivePage() {
 
   const pv = usePowerView();
   const raw = live.value ?? null;
-  const l = viewLive(raw, pv);
+  // fw 0.9.1: in line mode load and grid move with the inverter's 2-second VA between the meter's 15-second readings
+  const { live: l, k: meterK } = useLiveView(raw, pv);
   const age = l?.ts ? now - l.ts : Infinity;
   const stale = live.value !== undefined && age > STALE_SEC;
   const dia = meta?.dia ?? status.value?.dia;
@@ -58,6 +59,10 @@ export function LivePage() {
   const epv = l?.epv ?? d?.epv;
   const eld = l?.eld ?? d?.eld;
   const egr = l?.egr ?? d?.egr;
+  // fw 0.9.0 grid meter (cfg.meter on): viewLive/viewDaily already put its real W and Wh in gw/egr.
+  const gm = gridPowerMetered(raw, pv);
+  const lm = loadPowerMeasured(raw, pv); // load measured: meter on grid, solar + battery on battery (real W)
+  const egrM = isNum(l?.egr) ? gridEnergyMetered(raw, pv) : gridEnergyMetered(daily.value, pv);
   const frac = solarFraction(eld, egr);
   const tmpRaw = isNum(l?.tmp) && l!.tmp! > 150;
   const loading = live.value === undefined;
@@ -98,7 +103,7 @@ export function LivePage() {
         }
         right={<span class={`muted small ${stale ? 'bad' : ''}`}>{loading ? t('live.connecting') : l?.ts ? t('live.updated', { ago: fmtAgo(age) }) : ''}</span>}
       >
-        <PowerFlow live={l} stale={stale} va={va} />
+        <PowerFlow live={l} stale={stale} va={va} gridVa={va && !gm} loadVa={va && !lm} />
         <p class="muted small center">{modeLong(l?.md)}{flowNote(l)}</p>
       </Card>
 
@@ -120,9 +125,9 @@ export function LivePage() {
           <KV
             rows={[
               [t('w.grid'), `${fmtNum(l?.gv, 1, 'V')} · ${fmtNum(l?.gf, 1, 'Hz')}`],
-              [t('live.gridPower'), fmtPower(l?.gw, va)],
+              gm ? [t('live.gridPowerMeter'), fmtW(l?.gw)] : [t('live.gridPower'), fmtPower(l?.gw, va)],
               [t('w.output'), `${fmtNum(l?.ov, 1, 'V')} · ${fmtNum(l?.of, 1, 'Hz')}`],
-              [t('w.load'), `${fmtPower(l?.w, va)} · ${fmtPct(l?.ld)}`],
+              [t(lm ? 'live.loadMeter' : 'w.load'), `${lm ? fmtW(l?.w) : fmtPower(l?.w, va)} · ${fmtPct(l?.ld)}`],
               // VA mode: Load already is the VA. W mode on a VA-only inverter: the reported VA is the raw `w`.
               ...(va ? [] : [[t('live.apparent'), fmtNum(pv.est ? (raw?.va ?? raw?.w) : l?.va, 0, 'VA')] as [string, string]]),
               ['PV', `${fmtNum(l?.pvv, 0, 'V')} · ${fmtNum(l?.pvi, 1, 'A')}`],
@@ -131,17 +136,18 @@ export function LivePage() {
           />
           {pv.est && (
             <p class="muted small">
-              {va ? t('live.vaNoteVA') : t('live.vaNoteW', { pf: fmtNum(pv.k, 2) })}
+              {va ? t(gm ? 'live.vaNoteVAm' : 'live.vaNoteVA') : t(gm ? 'live.vaNoteWm' : 'live.vaNoteW', { pf: fmtNum(pv.k, 2) })}
             </p>
           )}
+          {lm && isNum(meterK) && <p class="muted small">{t('live.fusedNote', { k: fmtNum(meterK, 2) })}</p>}
         </Card>
       </div>
 
       <Card title={t('nav.today')} right={<span class="muted small">{fmtDateKey(today)}</span>}>
         <div class="tiles">
           <Tile label={t('w.solar')} value={fmtWh(epv)} tone="pv" sub={isNum(d?.epvi ?? l?.epvi) ? t('tile.inverter', { v: fmtWh(d?.epvi ?? l?.epvi) }) : undefined} />
-          <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(eld)} tone="load" />
-          <Tile label={t('tile.gridEst')} value={fmtWh(egr)} tone="grid" />
+          <Tile label={egrM ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(eld)} tone="load" />
+          <Tile label={egrM ? t('tile.gridMeter') : t('tile.gridEst')} value={fmtWh(egr)} tone="grid" />
           <Tile label={t('tile.battInOut')} value={`${fmtWh(l?.ech ?? d?.ech, 1)} / ${fmtWh(l?.edis ?? d?.edis, 1)}`} tone="batt" />
           <Tile label={t('tile.solarFracEst')} value={frac === null ? '–' : dg(`${Math.round(frac * 100)} %`)} sub={t('tile.solarFracSub')} />
           <Tile label={t('tile.peak')} value={`${fmtW(d?.pvx)} / ${fmtPower(d?.wx, va)}`} sub={isNum(d?.gout) ? t('tile.gridOff', { n: d!.gout! }) : undefined} />

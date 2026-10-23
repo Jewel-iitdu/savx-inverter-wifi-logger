@@ -1,5 +1,5 @@
-// Today: get(hist/<today>) once, then onChildAdded(startAfter(lastKey)) while
-// visible (d1 §6.2, §6.4). Minutes stay in memory for the session.
+// History's day view for today (the Today tab until 2026-10-24; #/today now opens History): get(hist/<today>) once,
+// then onChildAdded(startAfter(lastKey)) while visible (d1 §6.2, §6.4). Minutes stay in memory for the session.
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useApp, useReportError } from '../context';
 import { useNow, useStored, useSubscription } from '../lib/hooks';
@@ -7,18 +7,19 @@ import { dateKey, fmtDateKey, keyToEpoch } from '../lib/time';
 import { localizeDigits as dg, t } from '../lib/i18n';
 import { daySeries, histCsv, solarFraction, totalsFromRecs } from '../lib/series';
 import { fmtNum, fmtWh, isNum } from '../lib/format';
-import { usePowerView, viewDaily, viewRecs } from '../lib/power';
+import { gridEnergyMetered, usePowerView, viewDaily, viewRecs } from '../lib/power';
 import { saveCsv } from '../lib/csv';
 import { todayMem } from '../data/history';
 import type { Daily, HistRec } from '../data/types';
 import { DayCharts } from '../components/DayCharts';
 import { MoneyCard } from '../components/MoneyCard';
 import { useDayMoney } from '../lib/money';
+import { CompareCard } from '../components/CompareCard';
 import { Card, Empty, Segmented, Spinner, Tile } from '../components/ui';
 
 type Range = '6' | '12' | '24';
 
-export function TodayPage() {
+export function TodayView() {
   const { source, visible, theme } = useApp();
   const pv = usePowerView();
   const now = useNow(30000);
@@ -82,13 +83,14 @@ export function TodayPage() {
     };
   }, [visible, date, source, reloadNonce]);
 
-  const vrecs = useMemo(() => viewRecs(recs, pv), [recs, pv.k]);
+  const vrecs = useMemo(() => viewRecs(recs, pv), [recs, pv.k, pv.meter, pv.unit]);
   const s = useMemo(() => daySeries(date, vrecs), [date, vrecs]);
   const totals = useMemo(() => totalsFromRecs(vrecs), [vrecs]);
   const d = viewDaily(daily.value ?? null, pv);
   const epv = d?.epv ?? totals.epv;
   const eld = d?.eld ?? totals.eld;
   const egr = d?.egr ?? totals.egr;
+  const egrM = gridEnergyMetered(daily.value, pv); // fw 0.9.0 grid meter: viewDaily put egm in egr
   const frac = solarFraction(eld, egr);
   // money from the raw totals: useDayMoney applies the kWh (bill) view itself
   const raw = useMemo(() => totalsFromRecs(recs), [recs]);
@@ -104,7 +106,7 @@ export function TodayPage() {
   };
 
   return (
-    <div class="page">
+    <>
       <Card
         title={t('today.title', { date: fmtDateKey(date) })}
         right={<Segmented label={t('today.range')} value={range} options={[['6', t('u.h', { n: 6 })], ['12', t('u.h', { n: 12 })], ['24', t('today.day')]]} onChange={setRange} />}
@@ -130,8 +132,8 @@ export function TodayPage() {
       <Card title={t('today.energy')}>
         <div class="tiles">
           <Tile label={t('w.solar')} value={fmtWh(epv)} tone="pv" />
-          <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(eld)} tone="load" />
-          <Tile label={t('tile.gridEst')} value={fmtWh(egr)} tone="grid" />
+          <Tile label={egrM ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(eld)} tone="load" />
+          <Tile label={egrM ? t('tile.gridMeter') : t('tile.gridEst')} value={fmtWh(egr)} tone="grid" />
           <Tile label={t('tile.battIn')} value={fmtWh(d?.ech ?? totals.ech)} tone="batt" />
           <Tile label={t('tile.battOut')} value={fmtWh(d?.edis ?? totals.edis)} tone="batt" />
           <Tile label={t('tile.solarFracEst')} value={frac === null ? '–' : dg(`${Math.round(frac * 100)} %`)} sub={t('tile.solarFracSub')} />
@@ -145,6 +147,7 @@ export function TodayPage() {
       </Card>
 
       <MoneyCard title={t('money.titleToday')} date={date} m={money} />
-    </div>
+      <CompareCard date={date} recs={vrecs} />
+    </>
   );
 }

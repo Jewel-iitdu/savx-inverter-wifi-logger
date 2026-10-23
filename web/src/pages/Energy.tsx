@@ -7,7 +7,7 @@ import { addDays, addMonths, dateRange, fmtDateKey, fmtMonth, fmtMonthTiny, mont
 import { localizeDigits as dg, t } from '../lib/i18n';
 import { dailyCsv, histCsv } from '../lib/series';
 import { fmtWh } from '../lib/format';
-import { usePowerView, viewDailyMap } from '../lib/power';
+import { allDaysMetered, usePowerView, viewDailyMap } from '../lib/power';
 import { saveCsv } from '../lib/csv';
 import { getDailyMonth, getDailyYear, getHistDay } from '../data/history';
 import type { HistRec } from '../data/types';
@@ -30,8 +30,11 @@ export function EnergyPage() {
     const [a, b] = monthBounds(ym);
     return dateRange(a, b);
   }, [ym]);
-  const md = useMemo(() => viewDailyMap(month.data, pv) ?? {}, [month.data, pv.k]);
-  const yd = useMemo(() => viewDailyMap(yearQ.data, pv), [yearQ.data, pv.k]);
+  // viewDailyMap: the grid meter's kWh (egm) in place of the estimate on metered days (cfg.meter on)
+  const md = useMemo(() => viewDailyMap(month.data, pv) ?? {}, [month.data, pv.k, pv.meter]);
+  const yd = useMemo(() => viewDailyMap(yearQ.data, pv), [yearQ.data, pv.k, pv.meter]);
+  const mGrid = allDaysMetered(month.data, pv) ? t('tile.gridMeter') : t('tile.gridEst');
+  const yGrid = allDaysMetered(yearQ.data, pv) ? t('tile.gridMeter') : t('tile.gridEst');
   const mTot = Object.values(md).reduce<{ epv: number; eld: number; egr: number }>(
     (s, r) => ({ epv: s.epv + (r.epv ?? 0), eld: s.eld + (r.eld ?? 0), egr: s.egr + (r.egr ?? 0) }),
     { epv: 0, eld: 0, egr: 0 },
@@ -81,13 +84,13 @@ export function EnergyPage() {
               series={[
                 { name: t('w.solar'), color: '--c-pv', values: days.map((d) => kwh(md[d]?.epv)) },
                 { name: t('w.load'), color: '--c-load', values: days.map((d) => kwh(md[d]?.eld)) },
-                { name: t('tile.gridEst'), color: '--c-grid', values: days.map((d) => kwh(md[d]?.egr)) },
+                { name: mGrid, color: '--c-grid', values: days.map((d) => kwh(md[d]?.egr)) },
               ]}
             />
             <div class="tiles">
               <Tile label={t('w.solar')} value={fmtWh(mTot.epv, 1)} tone="pv" />
-              <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(mTot.eld, 1)} tone="load" />
-              <Tile label={t('tile.gridEst')} value={fmtWh(mTot.egr, 1)} tone="grid" />
+              <Tile label={allDaysMetered(month.data, pv) ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(mTot.eld, 1)} tone="load" />
+              <Tile label={mGrid} value={fmtWh(mTot.egr, 1)} tone="grid" />
             </div>
           </>
         )}
@@ -122,13 +125,13 @@ export function EnergyPage() {
               series={[
                 { name: t('w.solar'), color: '--c-pv', values: months.map((m) => (m.epv ? m.epv / 1000 : null)) },
                 { name: t('w.load'), color: '--c-load', values: months.map((m) => (m.eld ? m.eld / 1000 : null)) },
-                { name: t('tile.gridEst'), color: '--c-grid', values: months.map((m) => (m.egr ? m.egr / 1000 : null)) },
+                { name: yGrid, color: '--c-grid', values: months.map((m) => (m.egr ? m.egr / 1000 : null)) },
               ]}
             />
             <div class="tiles">
               <Tile label={t('w.solar')} value={fmtWh(yTot.epv, 0)} tone="pv" />
-              <Tile label={pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(yTot.eld, 0)} tone="load" />
-              <Tile label={t('tile.gridEst')} value={fmtWh(yTot.egr, 0)} tone="grid" />
+              <Tile label={allDaysMetered(yearQ.data, pv) ? t('tile.loadMeasured') : pv.est ? t('tile.loadEst') : t('w.load')} value={fmtWh(yTot.eld, 0)} tone="load" />
+              <Tile label={yGrid} value={fmtWh(yTot.egr, 0)} tone="grid" />
             </div>
           </>
         )}

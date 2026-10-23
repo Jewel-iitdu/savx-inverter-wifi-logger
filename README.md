@@ -33,6 +33,13 @@ Voltronic / PI30 inverters (Axpert, MPP Solar, EASun and other re-brands).
 - **Free cloud:** Firebase Realtime Database (Spark plan) and Cloudflare Workers static hosting. No card needed.
 - **Optional Android app:** a small Capacitor wrapper around the dashboard.
 - **Local page on your home WiFi**, with status, raw replies and over-the-air firmware updates.
+- **Optional grid meter (firmware 0.9+):** if a Smart Life / Tuya smart breaker with an energy meter sits on the grid
+  line before the inverter, the logger reads it on your WiFi (read-only, every 15 s). The app then shows real grid
+  watts, kWh and cost, a measured load (this inverter reports VA only), and a Meter tab with the breaker's alarms.
+  Get its local key once with `tools/meter/get-key.sh` (Smart Life QR login), enter it at `http://<logger-ip>/meter`.
+  The data-point map in `firmware/src/meter/MeterLive.cpp` is for Tuya product `kupa78rwoclnsx7j` (category `dlq`);
+  other breakers may need their own map (`tools/meter/probe.sh` shows what yours sends). Switching and schedules stay
+  in the Smart Life app.
 
 ## Hardware (about ৳1,500 / US$12)
 
@@ -152,7 +159,7 @@ Measured on a unit with main firmware `VERFW:00072.40` (October 2026):
 | [firebase/](firebase/) | Realtime Database rules (with placeholders for your user IDs) |
 | [docs/](docs/) | The build guides: plan, inverter profile, protocol, hardware and wiring, architecture, firmware, cloud, tests, troubleshooting, sources |
 | [research/](research/) | Background research: Voltronic PI30 and REVO protocol, Modbus families, hosting, e-mail, remote settings |
-| [shared/](shared/), [tools/](tools/) | Shared code tables, rules renderer and tests, board check sketch |
+| [shared/](shared/), [tools/](tools/) | Shared code tables, rules renderer and tests, board check sketch, grid meter key and probe tools (`tools/meter/`) |
 
 ## Safety and disclaimer
 
