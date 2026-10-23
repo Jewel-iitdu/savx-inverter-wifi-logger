@@ -27,6 +27,8 @@ struct AlertCfg {
   int gridOffFrom = -1, gridOffTo = -1;
   // 0.9.0 (appended): read the grid meter (1) or not (0); the app uses its values only when 1 (Settings -> Grid meter)
   int meter = 1;
+  // 0.9.2 (appended): remote firmware update request from the app: version code (0.9.3 -> 903) and request time
+  uint32_t ota = 0, otaAt = 0;
 };
 
 struct AlertEvent {

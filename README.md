@@ -33,6 +33,10 @@ Voltronic / PI30 inverters (Axpert, MPP Solar, EASun and other re-brands).
 - **Free cloud:** Firebase Realtime Database (Spark plan) and Cloudflare Workers static hosting. No card needed.
 - **Optional Android app:** a small Capacitor wrapper around the dashboard.
 - **Local page on your home WiFi**, with status, raw replies and over-the-air firmware updates.
+- **Firmware updates from the app (0.9.2+):** Settings → Firmware update installs a newer public GitHub release over
+  the internet. The logger checks the image's SHA-256 against the release's `SHA256SUMS.txt`, and a new version that
+  does not reach your cloud within 10 minutes is rolled back by the bootloader. Set the release repo once on your home
+  WiFi (`otaRepo` = `owner/repo` at `/api/config`, admin login); public builds ship with it empty (off).
 - **Optional grid meter (firmware 0.9+):** if a Smart Life / Tuya smart breaker with an energy meter sits on the grid
   line before the inverter, the logger reads it on your WiFi (read-only, every 15 s). The app then shows real grid
   watts, kWh and cost, a measured load (this inverter reports VA only), and a Meter tab with the breaker's alarms.

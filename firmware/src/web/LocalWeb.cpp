@@ -11,6 +11,7 @@
 #include "codes.h"
 #include "config.h"
 #include "meter/Meter.h"
+#include "net/RemoteOta.h"
 #include "model/JsonOut.h"
 #include "model/LiveJson.h"
 #include "model/TimeUtil.h"
@@ -268,6 +269,15 @@ static void hStatus() {
     j.u("scans", ms.scans);
     j.u("resets", ms.resets);
     if (ms.fresh) meterLiveFields(j, ms.m);
+    j.close();
+  }
+  {
+    char os[48];
+    rota::status(os, sizeof os);
+    j.openObj("ota");
+    j.s("repo", rota::repo());
+    j.s("state", os);
+    j.b("probation", rota::inProbation());
     j.close();
   }
   {  // usage-threshold rules (r8 §4.1): rules:{n,rev,acat,st:[...]}
@@ -564,6 +574,7 @@ static void hConfigGet() {
   j.i("gridOffFrom", c.gridOffFrom);
   j.i("gridOffTo", c.gridOffTo);
   j.i("meter", c.meter);
+  j.s("otaRepo", rota::repo());  // 0.9.2 remote update source (local admin setting)
   // secrets are write-only: only report whether they are set
   j.b("cloudSet", settings.hasStr("cloud", "apiKey") && settings.hasStr("cloud", "email"));
   j.b("ntfySet", settings.hasStr("alert", "ntfyTopic"));
@@ -607,6 +618,14 @@ static void hConfigPost() {
   i("meter", c.meter, 0, 1);
   app.applyCloudCfg(c);
   meter::setEnabled(c.meter != 0);
+  if (server.hasArg("otaRepo")) {  // 0.9.2: "owner/repo" of the releases, "-" turns remote updates off
+    String r = server.arg("otaRepo");
+    r.trim();
+    if (!rota::setRepo(r == "-" ? "" : r.c_str())) {
+      sendMsg(400, "otaRepo: owner/repo");
+      return;
+    }
+  }
   if (server.hasArg("adminpw") && server.arg("adminpw").length() >= 6) settings.setAdminPassword(server.arg("adminpw"));
   // channel settings: write-only secrets ("-" clears), never echoed back
   bool chg = false;

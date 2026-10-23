@@ -173,6 +173,8 @@ size_t statusJson(const StatusDoc& s, char* out, size_t n) {
   j.i("qg", s.qg);
   if (s.ruleErr[0]) j.s("ruleErr", s.ruleErr);
   if (s.meter[0]) j.s("meter", s.meter);
+  if (s.ota[0]) j.s("ota", s.ota);
+  if (s.repo[0]) j.s("repo", s.repo);
   j.close();
   return j.ok() ? j.len() : 0;
 }
@@ -302,7 +304,8 @@ bool cfgEq(const AlertCfg& a, const AlertCfg& b) {
          a.tempHigh == b.tempHigh && a.loadHigh == b.loadHigh && a.notifyRepeatMin == b.notifyRepeatMin &&
          a.keepHistDays == b.keepHistDays && a.keepEventDays == b.keepEventDays && a.quietFrom == b.quietFrom &&
          a.quietTo == b.quietTo && a.summaryHour == b.summaryHour && a.testAlert == b.testAlert &&
-         a.reprobe == b.reprobe && a.gridOffFrom == b.gridOffFrom && a.gridOffTo == b.gridOffTo && a.meter == b.meter;
+         a.reprobe == b.reprobe && a.gridOffFrom == b.gridOffFrom && a.gridOffTo == b.gridOffTo && a.meter == b.meter &&
+         a.ota == b.ota && a.otaAt == b.otaAt;
 }
 
 bool parseCfg(const char* json, size_t n, CfgDoc& out) {
@@ -330,6 +333,8 @@ bool parseCfg(const char* json, size_t n, CfgDoc& out) {
   if (numIn(o["quietTo"], 0, 23, v)) c.quietTo = (int)v;
   if (numIn(o["summaryHour"], -1, 23, v)) c.summaryHour = (int)v;
   if (numIn(o["meter"], 0, 1, v)) c.meter = (int)v;  // 0.9.0 grid meter on/off
+  if (numIn(o["ota"], 0, 999999, v)) c.ota = (uint32_t)v;  // 0.9.2 remote update: version code
+  if (numIn(o["otaAt"], 0, 1e15, v)) c.otaAt = (uint32_t)fmod(v, 4294967296.0);
   if (numIn(o["testAlert"], 0, 1e15, v)) c.testAlert = (uint32_t)fmod(v, 4294967296.0);
   if (numIn(o["reprobe"], 0, 1e15, v)) c.reprobe = (uint32_t)fmod(v, 4294967296.0);
   if (numIn(o["alertsRev"], 0, 1e16, v)) {

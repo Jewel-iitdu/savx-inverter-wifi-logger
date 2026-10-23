@@ -106,6 +106,11 @@ await t('N71 cfg/meter not a string', 'owner', 'PUT', 'cfg/meter', '1', 401);
 await t('P72 device live with meter fields', 'device', 'PUT', 'live', { ts: now, lk: 1, gw: 230, mw: 211, mv: 244.4, mi: 1.29, mpf: 0.66, mhz: 50.4, mrc: 196, mtc: 37, mkwh: 305.03, mon: 1, egm: 2150 }, 'ok');
 await t('P73 device daily with egm', 'device', 'PATCH', '', { [`daily/${D}/egm`]: 2150 }, 'ok');
 await t('P74 device status with the meter state', 'device', 'PATCH', 'status', { meter: 'not reachable' }, 'ok');
+// 0.9.2 remote firmware update: the owner asks for a version; the device reports its state and release repo
+await t('P75 owner requests a firmware update', 'owner', 'PATCH', 'cfg', { ota: 903, otaAt: nowMs }, 'ok');
+await t('N75 ota version out of range', 'owner', 'PUT', 'cfg/ota', 1000000, 401);
+await t('N76 device cannot request an update', 'device', 'PUT', 'cfg/ota', 903, 401);
+await t('P76 device status with the update state', 'device', 'PATCH', 'status', { ota: 'updated to 0.9.3', repo: 'owner/savx-inverter-wifi-logger' }, 'ok');
 await t('N37 mailer cannot read meta', 'mailer', 'GET', 'meta', undefined, 401);
 await t('N38 test request from the future (+1 h)', 'owner', 'PUT', 'mailq/test', { ts: now + 3600 }, 401);
 await t('N39 rule name 41 chars', 'owner', 'PUT', 'alerts/rules/r02', rule({ name: 'x'.repeat(41) }), 401);

@@ -89,6 +89,8 @@ export interface Status {
   qg?: number; // quota-guard level 0-2
   // fw 0.9.0 grid meter: "ok <proto> <age>s" while readings are fresh, else a short English state ("not reachable", …)
   meter?: string;
+  ota?: string; // fw 0.9.2: remote firmware update state ("updated to 0.9.3", "downloading 0.9.3: 40%", "failed: …")
+  repo?: string; // fw 0.9.2: GitHub repo whose releases the logger installs (absent: remote update off)
 }
 
 /** /devices/inv1/meta — flat, boot and on change. */
@@ -209,6 +211,9 @@ export interface Cfg {
   reprobe: number;
   /** 0.9.0: 1 = read the grid meter and use its W/kWh (default when absent), 0 = off (inverter estimates only). Not in CFG_FIELDS. */
   meter: number;
+  /** 0.9.2: remote firmware update request: version code (0.9.3 -> 903) and the request time (ms). Not in CFG_FIELDS. */
+  ota: number;
+  otaAt: number;
   /** serverTimestamp() (ms) bumped with every alerts/* change (r8 §3.4). Never in CFG_FIELDS. */
   alertsRev?: number;
 }
@@ -231,10 +236,12 @@ export const CFG_DEFAULTS: Cfg = {
   testAlert: 0,
   reprobe: 0,
   meter: 1,
+  ota: 0,
+  otaAt: 0,
 };
 
 export interface CfgField {
-  key: Exclude<keyof Cfg, 'testAlert' | 'reprobe' | 'alertsRev' | 'gridOffFrom' | 'gridOffTo' | 'meter'>;
+  key: Exclude<keyof Cfg, 'testAlert' | 'reprobe' | 'alertsRev' | 'gridOffFrom' | 'gridOffTo' | 'meter' | 'ota' | 'otaAt'>;
   label: string;
   unit: string;
   min: number;

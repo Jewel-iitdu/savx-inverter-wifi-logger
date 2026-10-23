@@ -58,6 +58,8 @@ struct StatusDoc {
   int qg = 0;             // FW-2: quota guard level 0/1/2
   char ruleErr[41] = "";  // r8 §4.9: last alerts.json problem ("" omitted)
   char meter[41] = "";    // 0.9.0 grid meter state, e.g. "ok 3.4 2 s" ("" omitted: not set up)
+  char ota[41] = "";      // 0.9.2 remote update state, e.g. "updated to 0.9.3" ("" omitted)
+  char repo[41] = "";     // 0.9.2 releases repo for remote updates ("" omitted: off)
 };
 size_t statusJson(const StatusDoc& s, char* out, size_t n);
 

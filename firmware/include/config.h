@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.9.1"
+#define FW_VERSION "0.9.3"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -153,6 +153,9 @@ constexpr uint32_t PORTAL_TIMEOUT_S = 600;   // on-demand portal closes after 10
 #define MDNS_HOST "solar"
 #define AP_NAME_PREFIX "SavxLogger-"
 #define ADMIN_USER "admin"
+// Remote firmware update (0.9.2, net/RemoteOta.h): GitHub repo whose public releases the logger installs from. Seeds
+// the NVS setting once (change it at /api/config otaRepo); public builds leave it empty (remote update off).
+#define OTA_REPO_DEFAULT ""
 
 // Task layout (d1 §5.3)
 constexpr uint32_t STACK_INV = 12288, STACK_AGG = 10240, STACK_UPLINK = 16384;  // d1: 8/8/16 KB; +headroom for the probe and alert texts
@@ -174,5 +177,14 @@ constexpr uint32_t METER_RESCAN_MIN_MS = 10UL * 60000UL, METER_RESCAN_MAX_MS = 6
 constexpr uint32_t METER_DAY_SAVE_MS = 30UL * 60000UL;   // day accounting to NVS (and at every roll-over)
 constexpr uint8_t METER_MAX_CRASHES = 2;           // crashes with the meter on -> meter reading stops (re-arm)
 constexpr uint32_t METER_CRASH_CLEAR_MS = 6UL * 3600000UL;
+
+// Remote firmware update (0.9.2, net/OtaPlan.h): probation of a new image, download limits
+constexpr uint32_t OTA_PROBATION_MIN_MS = 120000;   // confirmed after a cloud write and 2 min of uptime
+constexpr uint32_t OTA_PROBATION_MAX_MS = 600000;   // no cloud write within 10 min: back to the previous image
+constexpr uint32_t OTA_MIN_HEAP = 45000;            // largest internal block needed for the TLS download
+constexpr uint32_t OTA_TLS_TIMEOUT_S = 15;
+constexpr int32_t OTA_CONNECT_MS = 10000;
+constexpr uint32_t OTA_IO_MS = 20000;               // no data for this long: give up
+constexpr uint32_t OTA_TOTAL_MS = 5UL * 60000UL;
 
 }  // namespace cfg

@@ -16,6 +16,8 @@
 #include "net/Budget.h"
 #include "net/FirebaseRest.h"
 #include "net/MailNudge.h"
+#include "net/OtaPlan.h"
+#include "net/RemoteOta.h"
 #include "net/Notify.h"
 #include "net/TimeSync.h"
 #include "net/UplinkJson.h"
@@ -75,6 +77,7 @@ bool hcFirst_ = true;
 uint32_t accHs_ = 0, accRq_ = 0;
 mrec::Daily fin_;
 bool finHave_ = false;
+uint32_t otaReq_ = 0;       // 0.9.2: a remote update to run (version code)
 bool meterFinHave_ = false;  // 0.9.0 grid meter: a finished day's metered energy to write
 int32_t meterFinDay_ = 0, meterFinWh_ = -1;
 Prune prune_ = Prune::IDLE;
@@ -357,6 +360,8 @@ size_t buildStatus(char* out, size_t cap, uint32_t ep) {
   s.edrop = st_.edrop;
   s.qg = budget.level();
   snprintf(s.ruleErr, sizeof s.ruleErr, "%s", st_.ruleErr[0] ? st_.ruleErr : ri.err);
+  rota::status(s.ota, sizeof s.ota);
+  if (strlen(rota::repo()) < sizeof s.repo) snprintf(s.repo, sizeof s.repo, "%s", rota::repo());
   meter::Snap ms = meter::snap();
   if (ms.configured || !ms.enabled) {
     if (ms.fresh) snprintf(s.meter, sizeof s.meter, "ok %d.%d %lus", ms.proto / 10, ms.proto % 10, (unsigned long)ms.ageS);
@@ -467,6 +472,17 @@ bool doCfg(uint32_t now) {
     app.applyCloudCfg(c.c);  // aggTask: thresholds, quiet hours, testAlert -> TEST_ALERT, reprobe
   }
   meter::setEnabled(c.c.meter != 0);  // acts on changes only (off -> on also re-arms after a crash stop)
+  // 0.9.2 remote update: each request (version, time) is acted on once, whatever the outcome
+  ota::Go go = ota::decide(c.c.ota, c.c.otaAt, ota::versionCode(FW_VERSION), rota::handledAt(), rota::repo()[0] != 0);
+  if (go != ota::Go::NONE) {
+    rota::setHandled(c.c.otaAt);
+    char v[16];
+    ota::versionStr(c.c.ota, v, sizeof v);
+    if (go == ota::Go::START) otaReq_ = c.c.ota;
+    else if (go == ota::Go::NOT_NEWER) rota::setStatus("%s is not newer than %s", v, FW_VERSION);
+    else rota::setStatus("failed: no release repo on the logger");
+    tStatus_ = millis() - cfg::STATUS_MS;  // report it with the next status write
+  }
   haveCloudCfg_ = true;
   cloudRev_ = c.hasRev ? c.alertsRev : 0;
   st_.cloudAlertsRev = cloudRev_;
@@ -559,6 +575,26 @@ bool doMeterDay() {
   size_t n = p.close();
   if (ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), "meter daily")) meterFinHave_ = false;
   return true;
+}
+
+// 0.9.2 remote update: one TLS session at a time (drop the cloud one), download / check / install, report, restart
+void runOta() {
+  uint32_t code = otaReq_;
+  otaReq_ = 0;
+  fb.drop();
+  bool installed = rota::run(code);
+  char sj[720];
+  if (buildStatus(sj, sizeof sj, timeSync.epochOrZero())) {
+    upj::Patch p(body_, bodyCap_);
+    p.add("status", sj);
+    size_t n = p.close();
+    ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), "ota status");
+  }
+  if (installed) {
+    settings.setStr("sys", "plannedRb", "update");  // log-only restart (0.8.0)
+    delay(500);
+    ESP.restart();
+  }
 }
 
 bool doMtd(uint32_t now) {
@@ -805,6 +841,7 @@ void loop() {
   if (ops < 3) step(doMtd(millis()));
   if (ops < 3) step(doDiag(millis()));
   if (ops < 3) step(doPrune(millis(), ep, today));
+  if (otaReq_) runOta();
   opsEvents(millis(), ep, today);
   compactPend();
 }

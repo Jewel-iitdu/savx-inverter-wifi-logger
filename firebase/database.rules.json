@@ -99,6 +99,8 @@
           "gridOffFrom": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 1439" },
           "gridOffTo":   { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 1439" },
           "meter":       { ".validate": "newData.isNumber() && (newData.val() === 0 || newData.val() === 1)" },
+          "ota":         { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999" },
+          "otaAt":       { ".validate": "newData.isNumber() && newData.val() >= 0" },
           "summaryHour": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 23" },
           "testAlert":   { ".validate": "newData.isNumber()" },
           "reprobe":     { ".validate": "newData.isNumber()" },

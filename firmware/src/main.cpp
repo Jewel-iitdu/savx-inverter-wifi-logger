@@ -18,6 +18,7 @@
 #include "app/Console.h"
 #include "config.h"
 #include "meter/Meter.h"
+#include "net/RemoteOta.h"
 #include "model/JsonAlloc.h"
 #include "net/TimeSync.h"
 #include "net/Uplink.h"
@@ -76,6 +77,7 @@ void setup() {
     if (early.prof.mode == LinkMode::RS232_LITE && early.prof.diConfirmed) driveHighNoGlitch(early.prof.diPin);
   }
   app.bootId = settings.nextBootId();
+  rota::begin();  // 0.9.2: probation of a freshly installed image, outcome of the last remote update
   bool safe = safemode::evaluateAtBoot();
   app.safeMode = safe;
   if (safe) xEventGroupSetBits(app.events, EV_SAFE_MODE);
@@ -128,6 +130,7 @@ void loop() {
   localWeb.loop();
   console::loop();
   safemode::loop(now);
+  if (rota::inProbation()) rota::probationLoop(app.uplinkStatus().lastCloudOkEpoch != 0);
 
   // BOOT (GPIO0) held 3 s while running -> provisioning portal (10 min)
   if (digitalRead(cfg::PIN_BOOT) == LOW) {
