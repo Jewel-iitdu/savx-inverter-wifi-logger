@@ -486,6 +486,8 @@ static void aggTask(void*) {
   {
     String lastFw = settings.getStr("sys", "fw", "");
     String planned = settings.getStr("sys", "plannedRb", "");
+    String cause = settings.getStr("sys", "rbCause", "");  // 0.9.9: why a watchdog restarted the logger
+    if (cause.length()) settings.setStr("sys", "rbCause", "");
     bool sw = !strcmp(app.resetReason, "SW");
     bool updated = lastFw.length() ? lastFw != FW_VERSION : sw;
     if (lastFw != FW_VERSION) settings.setStr("sys", "fw", FW_VERSION);
@@ -500,7 +502,8 @@ static void aggTask(void*) {
         snprintf(msg, sizeof msg, "Logger restarted on request (%s)", planned.c_str());
         alerts.raiseQuiet("LOGGER_REBOOT", 2, msg, millis(), timeSync.epochOrZero());
       } else {
-        snprintf(msg, sizeof msg, "Logger rebooted (reason %s)", app.resetReason);
+        snprintf(msg, sizeof msg, "Logger rebooted (reason %s%s%s)", app.resetReason, cause.length() && sw ? ": " : "",
+                 cause.length() && sw ? cause.c_str() : "");
         alerts.raise("LOGGER_REBOOT", 2, msg, millis(), timeSync.epochOrZero());
       }
     }

@@ -765,8 +765,9 @@ void loop() {
     fb.drop();
     fb.forceReauth();
   } else if (a == NetWatchdog::Action::RESTART) {
-    Serial.println(F("[up] network watchdog: no cloud success for 60 min - rebooting"));
+    Serial.println(F("[up] network watchdog: no cloud success for 60+ min - rebooting"));
     settings.putBlob("sys", "nwdEp", &ep, sizeof ep);
+    settings.setStr("sys", "rbCause", "no cloud for 60+ min");
     delay(200);
     ESP.restart();
   }

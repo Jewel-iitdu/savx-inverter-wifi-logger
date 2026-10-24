@@ -660,6 +660,78 @@ void test_network_watchdog_auth_failures() {
   TEST_ASSERT_EQUAL(-1, restartAt);
 }
 
+// 0.9.9: Wi-Fi up but no connect ever works (wedged IP stack or DNS). Before, the watchdog only dropped TLS every
+// 45 min, for good; now it reboots after 6 h of silence, at most once per 6 h.
+void test_network_watchdog_long_silence() {
+  uint32_t ep = T_1435;
+  NetWatchdog w;
+  w.step(0, true, true, ep, 0);
+  int restartAt = -1;
+  for (int m = 1; m <= 7 * 60 && restartAt < 0; m++)
+    if (w.step((uint32_t)m * 60000u, true, true, ep + m * 60, 0) == NetWatchdog::Action::RESTART) restartAt = m;
+  TEST_ASSERT_EQUAL(6 * 60, restartAt);
+  // a watchdog reboot 2 h ago: wait for the 6-h gap
+  NetWatchdog w2;
+  w2.step(0, true, true, ep, 0);
+  TEST_ASSERT_EQUAL((int)NetWatchdog::Action::DROP_TLS, (int)w2.step(6 * 3600000u, true, true, ep, ep - 2 * 3600));
+  TEST_ASSERT_EQUAL((int)NetWatchdog::Action::RESTART, (int)w2.step(10 * 3600000u, true, true, ep + 4 * 3600, ep - 2 * 3600));
+  // a cloud success or Wi-Fi down restarts the 6 h
+  NetWatchdog w3;
+  w3.step(0, true, true, ep, 0);
+  w3.onCloudOk(5 * 3600000u);
+  TEST_ASSERT_NOT_EQUAL((int)NetWatchdog::Action::RESTART, (int)w3.step(6 * 3600000u, true, true, ep, 0));
+  w3.step(7 * 3600000u, false, true, ep, 0);
+  TEST_ASSERT_NOT_EQUAL((int)NetWatchdog::Action::RESTART, (int)w3.step(12 * 3600000u, true, true, ep, 0));
+}
+
+// counts a Wi-Fi watchdog's reconnects and the minute of its first reboot (-1: none) over `minutes`, one step a minute
+static void wifiDown(WifiWatchdog& w, uint32_t t0, int minutes, bool portal, int& kicks, int& restartAt) {
+  kicks = 0;
+  restartAt = -1;
+  for (int m = 1; m <= minutes && restartAt < 0; m++) {
+    WifiWatchdog::Action a = w.step(t0 + (uint32_t)m * 60000u, false, portal);
+    if (a == WifiWatchdog::Action::RECONNECT) kicks++;
+    if (a == WifiWatchdog::Action::RESTART) restartAt = m;
+  }
+}
+
+void test_wifi_watchdog() {
+  int kicks, restartAt;
+  // up, then lost (router reboot, AUTH_FAIL): a reconnect every 2 min, reboot after 30 min
+  WifiWatchdog w;
+  w.step(0, true, false);
+  wifiDown(w, 0, 60, false, kicks, restartAt);
+  TEST_ASSERT_EQUAL(14, kicks);  // minutes 2, 4 ... 28
+  TEST_ASSERT_EQUAL(30, restartAt);
+  // back within 10 min: no reboot, the timer starts again
+  WifiWatchdog w2;
+  w2.step(0, true, false);
+  wifiDown(w2, 0, 10, false, kicks, restartAt);
+  TEST_ASSERT_EQUAL(5, kicks);
+  TEST_ASSERT_EQUAL((int)WifiWatchdog::Action::NONE, (int)w2.step(11 * 60000u, true, false));
+  wifiDown(w2, 11 * 60000u, 29, false, kicks, restartAt);
+  TEST_ASSERT_EQUAL(-1, restartAt);
+  // never up in this boot (router off, password changed): reconnects, reboot only after 6 h
+  WifiWatchdog w3;
+  w3.step(0, false, false);
+  wifiDown(w3, 0, 7 * 60, false, kicks, restartAt);
+  TEST_ASSERT_EQUAL(6 * 60, restartAt);
+  TEST_ASSERT_EQUAL(179, kicks);
+  // the setup portal owns the radio
+  WifiWatchdog w4;
+  w4.step(0, true, false);
+  wifiDown(w4, 0, 60, true, kicks, restartAt);
+  TEST_ASSERT_EQUAL(0, kicks);
+  TEST_ASSERT_EQUAL(-1, restartAt);
+}
+
+// 0.9.9: a safe mode after a crash loop ends by itself after 30 min; the manual flag does not
+void test_safe_mode_auto_exit() {
+  TEST_ASSERT_FALSE(safeModeAutoExit(true, 29 * 60000u));
+  TEST_ASSERT_TRUE(safeModeAutoExit(true, 30 * 60000u));
+  TEST_ASSERT_FALSE(safeModeAutoExit(false, 10 * 3600000u));
+}
+
 // ============================================================================================ push bodies
 void test_ntfy_and_telegram_bodies() {
   AlertEvent e = mkEvent("GRID_LOSS", "open", 'o', 4);
@@ -768,6 +840,9 @@ int main(int, char**) {
   RUN_TEST(test_budget_levels_and_backoff);
   RUN_TEST(test_network_watchdog);
   RUN_TEST(test_network_watchdog_auth_failures);
+  RUN_TEST(test_network_watchdog_long_silence);
+  RUN_TEST(test_wifi_watchdog);
+  RUN_TEST(test_safe_mode_auto_exit);
   RUN_TEST(test_ntfy_and_telegram_bodies);
   RUN_TEST(test_cfg_eq_sees_grid_off_and_meter);
   return UNITY_END();

@@ -54,17 +54,18 @@ NetWatchdog::Action NetWatchdog::step(uint32_t nowMs, bool wifiUp, bool cloudCon
                                       uint32_t lastRestartEpoch) {
   if (!started_) {
     started_ = true;
-    lastOk_ = nowMs;
+    lastOk_ = silentSince_ = nowMs;
   }
   if (!wifiUp || !cloudConfigured) {  // only "Wi-Fi up but the cloud is unreachable" counts
-    lastOk_ = nowMs;
+    lastOk_ = silentSince_ = nowMs;
     dropped_ = false;
     return Action::NONE;
   }
   uint32_t since = nowMs - lastOk_;
+  bool gapOk = nowEpoch == 0 || lastRestartEpoch == 0 || nowEpoch >= lastRestartEpoch + cfg::NETWD_RESTART_MIN_GAP_S;
+  if ((uint32_t)(nowMs - silentSince_) >= cfg::NETWD_SILENT_RESTART_MS && gapOk) return Action::RESTART;
   if (since >= cfg::NETWD_RESTART_MS) {
     bool connectRecently = haveConnect_ && (uint32_t)(nowMs - lastConnect_) < cfg::NETWD_RESTART_MS;
-    bool gapOk = nowEpoch == 0 || lastRestartEpoch == 0 || nowEpoch >= lastRestartEpoch + cfg::NETWD_RESTART_MIN_GAP_S;
     if (connectRecently && gapOk) return Action::RESTART;
     lastOk_ = nowMs - cfg::NETWD_DROP_MS;  // no reboot: drop TLS again and re-check in 45 min
     dropped_ = true;
@@ -73,6 +74,24 @@ NetWatchdog::Action NetWatchdog::step(uint32_t nowMs, bool wifiUp, bool cloudCon
   if (since >= cfg::NETWD_DROP_MS && !dropped_) {
     dropped_ = true;
     return Action::DROP_TLS;
+  }
+  return Action::NONE;
+}
+
+WifiWatchdog::Action WifiWatchdog::step(uint32_t nowMs, bool wifiUp, bool portal) {
+  if (!started_) {
+    started_ = true;
+    downSince_ = lastKick_ = nowMs;
+  }
+  if (wifiUp || portal) {
+    if (wifiUp) everUp_ = true;
+    downSince_ = lastKick_ = nowMs;
+    return Action::NONE;
+  }
+  if (downMs(nowMs) >= (everUp_ ? cfg::WIFI_RESTART_MS : cfg::WIFI_RESTART_NEVER_UP_MS)) return Action::RESTART;
+  if ((uint32_t)(nowMs - lastKick_) >= cfg::WIFI_KICK_MS) {
+    lastKick_ = nowMs;
+    return Action::RECONNECT;
   }
   return Action::NONE;
 }

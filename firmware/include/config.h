@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.9.8"
+#define FW_VERSION "0.9.9"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -138,6 +138,11 @@ constexpr uint32_t BUDGET_HS_GUARD = 1500, BUDGET_RQ_GUARD = 60000;   // d1 §4.
 constexpr uint32_t BUDGET_HS_HARD = 3000, BUDGET_RQ_HARD = 120000;    // FW-2 addition: live paused
 constexpr uint32_t NETWD_DROP_MS = 15UL * 60000UL, NETWD_RESTART_MS = 60UL * 60000UL;
 constexpr uint32_t NETWD_RESTART_MIN_GAP_S = 6UL * 3600UL;           // at most one network-watchdog reboot per 6 h
+constexpr uint32_t NETWD_SILENT_RESTART_MS = 6UL * 3600000UL;        // 0.9.9: no cloud 6 h -> reboot even without connects
+// 0.9.9 Wi-Fi watchdog: reconnect every 2 min while down; reboot after 30 min down (if it was up in this boot) or
+// every 6 h (never up in this boot: wrong password or router gone, a reboot is cheap)
+constexpr uint32_t WIFI_KICK_MS = 2UL * 60000UL, WIFI_RESTART_MS = 30UL * 60000UL;
+constexpr uint32_t WIFI_RESTART_NEVER_UP_MS = 6UL * 3600000UL;
 constexpr uint8_t EVENT_MAX_TRIES = 3;              // permanent RTDB errors per event before it is dropped (edrop)
 constexpr uint8_t PUSH_MAX_TRIES = 3;
 constexpr uint32_t PRUNE_AFTER_MIN = 5;             // prune at/after 00:05 local
@@ -147,6 +152,7 @@ constexpr uint32_t BACKLOG_STUCK_S = 6UL * 3600UL;
 // System (d1 §5.7-5.9)
 constexpr uint8_t SAFE_MODE_BOOTFAILS = 3;
 constexpr uint32_t HEALTHY_AFTER_MS = 120000;
+constexpr uint32_t SAFE_MODE_EXIT_MS = 30UL * 60000UL;  // 0.9.9: a crash-loop safe mode retries normal mode after 30 min
 constexpr uint32_t WDT_TIMEOUT_S = 30;
 constexpr uint32_t BOOT_HOLD_MS = 3000;
 constexpr uint32_t PORTAL_TIMEOUT_S = 600;   // on-demand portal closes after 10 min

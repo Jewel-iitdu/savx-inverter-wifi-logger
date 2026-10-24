@@ -5,6 +5,7 @@
 #include <WiFiManager.h>
 
 #include "config.h"
+#include "net/Budget.h"
 #include "net/Uplink.h"
 #include "store/Settings.h"
 
@@ -29,6 +30,7 @@ const ProvParamDef PROV_PARAMS[] = {
 const size_t PROV_PARAMS_N = sizeof(PROV_PARAMS) / sizeof(PROV_PARAMS[0]);
 
 static WiFiManager wm;
+static WifiWatchdog wifiWd;  // 0.9.9, see Budget.h
 static WiFiManagerParameter* params[sizeof(PROV_PARAMS) / sizeof(PROV_PARAMS[0])];
 static String defaults[sizeof(PROV_PARAMS) / sizeof(PROV_PARAMS[0])];
 
@@ -125,4 +127,24 @@ void WifiProv::loop() {
     }
   }
   if (WiFi.status() == WL_CONNECTED) everUp_ = true;
+  uint32_t now = millis();
+  switch (wifiWd.step(now, WiFi.status() == WL_CONNECTED, portal_)) {
+    case WifiWatchdog::Action::RECONNECT:
+      Serial.printf("[wifi] down %lu s (status %d): reconnecting\n", (unsigned long)(wifiWd.downMs(now) / 1000),
+                    (int)WiFi.status());
+      WiFi.disconnect(false, false);  // keeps the radio on and the saved network
+      WiFi.reconnect();
+      break;
+    case WifiWatchdog::Action::RESTART: {
+      char cause[40];
+      snprintf(cause, sizeof cause, "no Wi-Fi for %lu min", (unsigned long)(wifiWd.downMs(now) / 60000));
+      Serial.printf("[wifi] %s - rebooting\n", cause);
+      settings.setStr("sys", "rbCause", cause);
+      delay(200);
+      ESP.restart();
+      break;
+    }
+    default:
+      break;
+  }
 }

@@ -4,12 +4,13 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "net/Budget.h"
 #include "store/Settings.h"
 #include "sys/Watchdog.h"
 
 namespace safemode {
 
-static bool cleared_ = false;
+static bool cleared_ = false, crashSafe_ = false;
 static uint8_t fails_ = 0;
 
 bool evaluateAtBoot() {
@@ -18,10 +19,21 @@ bool evaluateAtBoot() {
     if (fails_ < 255) fails_++;
     settings.setBootFails(fails_);
   }
-  return fails_ >= cfg::SAFE_MODE_BOOTFAILS || settings.safeFlag();
+  bool manual = settings.safeFlag();
+  crashSafe_ = fails_ >= cfg::SAFE_MODE_BOOTFAILS && !manual;
+  return crashSafe_ || manual;
 }
 
 void loop(uint32_t nowMs) {
+  if (safeModeAutoExit(crashSafe_, nowMs)) {  // 0.9.9: nobody may be home to end it; a real crash loop returns here
+    char cause[64];
+    snprintf(cause, sizeof cause, "left safe mode after 30 min (%u crashes in a row)", (unsigned)fails_);
+    Serial.printf("[safe] %s, rebooting\n", cause);
+    settings.setBootFails(0);
+    settings.setStr("sys", "rbCause", cause);
+    delay(200);
+    ESP.restart();
+  }
   if (cleared_ || nowMs < cfg::HEALTHY_AFTER_MS) return;
   cleared_ = true;
   if (fails_) settings.setBootFails(0);

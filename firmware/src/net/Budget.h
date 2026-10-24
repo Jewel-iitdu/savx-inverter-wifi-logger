@@ -9,6 +9,8 @@
 //       per 6 h, and only after a TCP/TLS connect worked in that hour, so a plain ISP outage never reboot-loops).
 //       0.9.8: a failed sign-in/token refresh counts as "no cloud success" unless the credentials are wrong, and a
 //       TLS session that ran out of internal heap counts as a working connect (a reboot clears the heap).
+//       0.9.9: 6 h without any cloud success -> reboot even without a working connect (a wedged IP stack or DNS never
+//       connects), still at most once per 6 h; Wi-Fi watchdog; a crash-loop safe mode ends after 30 min.
 #pragma once
 #include <stdint.h>
 
@@ -51,7 +53,7 @@ class Budget {
 class NetWatchdog {
  public:
   enum class Action : uint8_t { NONE, DROP_TLS, RESTART };
-  void onCloudOk(uint32_t nowMs) { lastOk_ = nowMs; dropped_ = false; }
+  void onCloudOk(uint32_t nowMs) { lastOk_ = silentSince_ = nowMs; dropped_ = false; }
   void onConnectOk(uint32_t nowMs) { lastConnect_ = nowMs; haveConnect_ = true; }
   // TCP reached the server but mbedTLS found no heap: our fault, not the network's
   void onOutOfMemory(uint32_t nowMs) { onConnectOk(nowMs); }
@@ -63,12 +65,32 @@ class NetWatchdog {
   }
   // wifiUp: station connected; nowEpoch/lastRestartEpoch: guard of one reboot per NETWD_RESTART_MIN_GAP_S
   Action step(uint32_t nowMs, bool wifiUp, bool cloudConfigured, uint32_t nowEpoch, uint32_t lastRestartEpoch);
-  void reset(uint32_t nowMs) { lastOk_ = nowMs; dropped_ = false; }
+  void reset(uint32_t nowMs) { lastOk_ = silentSince_ = nowMs; dropped_ = false; }
 
  private:
   uint32_t lastOk_ = 0, lastConnect_ = 0;
+  uint32_t silentSince_ = 0;  // the real last cloud success (lastOk_ is moved forward between TLS drops)
   bool haveConnect_ = false, dropped_ = false, started_ = false;
 };
+
+// Wi-Fi watchdog (0.9.9). Arduino-ESP32 3.3 reconnects only for some disconnect reasons, once per event: after
+// AUTH_FAIL (routers send it while they reboot), IDF 5's newer "no AP found ..." reasons or a lost IP it never tries
+// again. Down WIFI_KICK_MS -> reconnect, and again every WIFI_KICK_MS. Down WIFI_RESTART_MS after it was up in this
+// boot -> reboot (the stack may be wedged); never up in this boot -> reboot after WIFI_RESTART_NEVER_UP_MS. The setup
+// portal owns the radio: no action while it is open.
+class WifiWatchdog {
+ public:
+  enum class Action : uint8_t { NONE, RECONNECT, RESTART };
+  Action step(uint32_t nowMs, bool wifiUp, bool portal);
+  uint32_t downMs(uint32_t nowMs) const { return nowMs - downSince_; }
+
+ private:
+  uint32_t downSince_ = 0, lastKick_ = 0;
+  bool started_ = false, everUp_ = false;
+};
+
+// a safe mode entered after crash-type resets (not the manual flag) ends by itself: nobody may be home to end it
+inline bool safeModeAutoExit(bool crashSafe, uint32_t upMs) { return crashSafe && upMs >= cfg::SAFE_MODE_EXIT_MS; }
 
 // true for an mbedTLS error code (as NetworkClientSecure::lastError returns it) that means "out of memory", also
 // inside a composite code (high-level module error + low-level error)
