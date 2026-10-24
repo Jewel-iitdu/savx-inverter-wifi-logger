@@ -43,7 +43,7 @@ bool HttpsClient::connect(HttpResult& r) {
   esp_task_wdt_reset();
   if (!ok) {
     char e[64] = "";
-    cli_.lastError(e, sizeof e);
+    r.tls = cli_.lastError(e, sizeof e);
     snprintf(r.err, sizeof r.err, "connect %s: %s", host_, e[0] ? e : "failed");
     r.status = -1;
     cli_.stop();

@@ -616,6 +616,50 @@ void test_network_watchdog() {
   TEST_ASSERT_EQUAL((int)NetWatchdog::Action::NONE, (int)w2.step(70 * 60000, true, true, ep, 0));
 }
 
+// one auth failure a minute for an hour; counts the watchdog's TLS drops and the minute of its first reboot (-1: none)
+static void authFailHour(bool credentialsHeld, bool outOfMemory, int& drops, int& restartAt) {
+  NetWatchdog w;
+  uint32_t ep = T_1435;
+  w.step(0, true, true, ep, 0);
+  drops = 0;
+  restartAt = -1;
+  for (int m = 1; m <= 60; m++) {
+    uint32_t t = (uint32_t)m * 60000u;
+    w.onAuthFail(t, credentialsHeld, outOfMemory);
+    NetWatchdog::Action a = w.step(t, true, true, ep, ep - 7 * 3600);
+    if (a == NetWatchdog::Action::DROP_TLS) drops++;
+    if (a == NetWatchdog::Action::RESTART && restartAt < 0) restartAt = m;
+  }
+}
+
+// 2026-10-24 10:18 on 0.9.7: the hourly token refresh failed with "SSL - Memory allocation failed" (the RTDB keep-alive
+// session held the heap) and stayed stuck, because every auth failure told the watchdog "cloud fine".
+void test_network_watchdog_auth_failures() {
+  TEST_ASSERT_TRUE(tlsOutOfMemory(-0x7F00));             // SSL_ALLOC_FAILED, the code seen that day
+  TEST_ASSERT_TRUE(tlsOutOfMemory(-(0x2880 + 0x006A)));  // X509 + ASN1 alloc, composite code
+  TEST_ASSERT_TRUE(tlsOutOfMemory(-0x0010));             // MPI alloc
+  TEST_ASSERT_TRUE(tlsOutOfMemory(-0x1180));             // PEM alloc (the root certificate is parsed at connect)
+  TEST_ASSERT_FALSE(tlsOutOfMemory(0));
+  TEST_ASSERT_FALSE(tlsOutOfMemory(-1));       // socket error from the Arduino layer
+  TEST_ASSERT_FALSE(tlsOutOfMemory(-0x2700));  // X509 certificate verify failed
+  TEST_ASSERT_FALSE(tlsOutOfMemory(-0x7780));  // SSL fatal alert
+  TEST_ASSERT_FALSE(tlsOutOfMemory(-0x6800));  // SSL timeout
+  TEST_ASSERT_FALSE(tlsOutOfMemory(-0x0050));  // NET connection reset
+  int drops, restartAt;
+  // out of TLS heap: drop TLS at 15 min (frees the RTDB session), reboot at 60 min (clears the heap)
+  authFailHour(false, true, drops, restartAt);
+  TEST_ASSERT_EQUAL(1, drops);
+  TEST_ASSERT_EQUAL(60, restartAt);
+  // other failures without a working connect (DNS, timeouts): drops only, as for an ISP outage
+  authFailHour(false, false, drops, restartAt);
+  TEST_ASSERT_EQUAL(2, drops);
+  TEST_ASSERT_EQUAL(-1, restartAt);
+  // wrong credentials wait for the owner: no drops, no reboot loop
+  authFailHour(true, false, drops, restartAt);
+  TEST_ASSERT_EQUAL(0, drops);
+  TEST_ASSERT_EQUAL(-1, restartAt);
+}
+
 // ============================================================================================ push bodies
 void test_ntfy_and_telegram_bodies() {
   AlertEvent e = mkEvent("GRID_LOSS", "open", 'o', 4);
@@ -723,6 +767,7 @@ int main(int, char**) {
   RUN_TEST(test_patch_builder_overflow);
   RUN_TEST(test_budget_levels_and_backoff);
   RUN_TEST(test_network_watchdog);
+  RUN_TEST(test_network_watchdog_auth_failures);
   RUN_TEST(test_ntfy_and_telegram_bodies);
   RUN_TEST(test_cfg_eq_sees_grid_off_and_meter);
   return UNITY_END();

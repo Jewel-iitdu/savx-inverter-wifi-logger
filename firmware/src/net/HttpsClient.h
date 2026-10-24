@@ -15,6 +15,7 @@ struct HttpResult {
   size_t bodyLen = 0;
   bool truncated = false;
   bool reused = false;   // went over an already open connection
+  int tls = 0;           // mbedTLS error code of a failed connect (0: none or not a TLS error)
   char err[64] = "";
 };
 

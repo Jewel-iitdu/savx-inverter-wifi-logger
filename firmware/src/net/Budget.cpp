@@ -39,6 +39,17 @@ uint32_t Budget::liveMs(int liveSec) const {
   return (uint32_t)liveSec * 1000UL;
 }
 
+bool tlsOutOfMemory(int mbedtlsErr) {
+  if (mbedtlsErr >= 0) return false;
+  int v = -mbedtlsErr;
+  int high = v & 0x7F80, low = v & 0x007F;
+  // SSL, X509, PEM, PK, ECP, DHM, CIPHER, MD, PKCS7 *_ALLOC_FAILED (mbedTLS 3.x)
+  static const int HIGH[] = {0x7F00, 0x2880, 0x1180, 0x3F80, 0x4D80, 0x3400, 0x6180, 0x5180, 0x5780};
+  for (int h : HIGH)
+    if (high == h) return true;
+  return low == 0x0010 || low == 0x006A || low == 0x0017;  // MPI, ASN1, LMS *_ALLOC_FAILED
+}
+
 NetWatchdog::Action NetWatchdog::step(uint32_t nowMs, bool wifiUp, bool cloudConfigured, uint32_t nowEpoch,
                                       uint32_t lastRestartEpoch) {
   if (!started_) {

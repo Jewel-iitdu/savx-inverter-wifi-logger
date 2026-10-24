@@ -141,6 +141,7 @@ bool ok(const FirebaseRest::Res& r, const char* what) {
     return true;
   }
   snprintf(st_.lastError, sizeof st_.lastError, "%s: %s", what, fb.lastError());
+  if (r.kind == FirebaseRest::Kind::NET && fb.outOfMemory()) netwd.onOutOfMemory(now);
   if (r.kind != FirebaseRest::Kind::NOAUTH) dbBackoff.fail(now);
   Serial.printf("[up] %s failed (%s); retry in %lus\n", what, fb.lastError(), (unsigned long)(dbBackoff.lastDelayMs() / 1000));
   return false;
@@ -818,7 +819,7 @@ void loop() {
     st_.authOk = false;
     snprintf(st_.state, sizeof st_.state, "auth");
     snprintf(st_.lastError, sizeof st_.lastError, "%s", fb.lastError());
-    netwd.onCloudOk(now);  // an auth problem is not a wedged network (avoid watchdog reboots)
+    netwd.onAuthFail(now, fb.credentialsHeld(now), fb.outOfMemory());  // wrong credentials: no watchdog reboots
     compactPend();
     return;
   }

@@ -7,6 +7,8 @@
 //       event once a day); FW-2 adds level 2 at 2x those numbers (live paused, cfg every 5 min);
 //   network watchdog: Wi-Fi up but no cloud success for 15 min -> drop TLS + re-auth; 60 min -> reboot (at most once
 //       per 6 h, and only after a TCP/TLS connect worked in that hour, so a plain ISP outage never reboot-loops).
+//       0.9.8: a failed sign-in/token refresh counts as "no cloud success" unless the credentials are wrong, and a
+//       TLS session that ran out of internal heap counts as a working connect (a reboot clears the heap).
 #pragma once
 #include <stdint.h>
 
@@ -51,6 +53,14 @@ class NetWatchdog {
   enum class Action : uint8_t { NONE, DROP_TLS, RESTART };
   void onCloudOk(uint32_t nowMs) { lastOk_ = nowMs; dropped_ = false; }
   void onConnectOk(uint32_t nowMs) { lastConnect_ = nowMs; haveConnect_ = true; }
+  // TCP reached the server but mbedTLS found no heap: our fault, not the network's
+  void onOutOfMemory(uint32_t nowMs) { onConnectOk(nowMs); }
+  // a failed sign-in / token refresh (0.9.8). Only wrong credentials (held for the owner, no reboot loop) keep the
+  // watchdog quiet; before 0.9.8 every auth failure did, and a refresh that ran out of heap stayed stuck for good.
+  void onAuthFail(uint32_t nowMs, bool credentialsHeld, bool outOfMemory) {
+    if (credentialsHeld) onCloudOk(nowMs);
+    else if (outOfMemory) onOutOfMemory(nowMs);
+  }
   // wifiUp: station connected; nowEpoch/lastRestartEpoch: guard of one reboot per NETWD_RESTART_MIN_GAP_S
   Action step(uint32_t nowMs, bool wifiUp, bool cloudConfigured, uint32_t nowEpoch, uint32_t lastRestartEpoch);
   void reset(uint32_t nowMs) { lastOk_ = nowMs; dropped_ = false; }
@@ -59,3 +69,7 @@ class NetWatchdog {
   uint32_t lastOk_ = 0, lastConnect_ = 0;
   bool haveConnect_ = false, dropped_ = false, started_ = false;
 };
+
+// true for an mbedTLS error code (as NetworkClientSecure::lastError returns it) that means "out of memory", also
+// inside a composite code (high-level module error + low-level error)
+bool tlsOutOfMemory(int mbedtlsErr);

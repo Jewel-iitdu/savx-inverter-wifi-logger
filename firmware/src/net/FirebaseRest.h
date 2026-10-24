@@ -5,9 +5,10 @@
 //             -> id_token, refresh_token, expires_in, user_id   (5 min before expiry; on any RTDB 401 once)
 //   RTDB    : <METHOD> https://<db host>/devices/<id>/<path>.json?auth=<ID_TOKEN>[&print=silent]
 // One keep-alive TLS client for RTDB (every new TLS session is ~3.5 KB of billed download, V2 F3), a separate
-// one-shot client for the token endpoints (about once an hour). The refresh token is persisted in NVS cloud/rtok and
-// dies on a password change (V2 F11): a refresh error then falls back to a full sign-in. Credential errors pause
-// sign-in attempts for 30 min (no lockout from TOO_MANY_ATTEMPTS). Never logs tokens or URLs with `auth=`.
+// one-shot client for the token endpoints (about once an hour), opened only after the RTDB session is closed (0.9.8:
+// both at once ran out of internal heap and the refresh never recovered). The refresh token is persisted in NVS
+// cloud/rtok and dies on a password change (V2 F11): a refresh error then falls back to a full sign-in. Credential
+// errors pause sign-in attempts for 30 min (no lockout from TOO_MANY_ATTEMPTS). Never logs tokens or URLs with `auth=`.
 #pragma once
 #include <Arduino.h>
 
@@ -32,6 +33,9 @@ class FirebaseRest {
   bool configured() const { return configured_; }
   bool ensureAuth(uint32_t nowMs);  // a valid ID token (refresh / sign-in as needed, with back-off)
   bool authOk() const { return haveToken_; }
+  // wrong credentials: sign-in paused for 30 min, waiting for the owner (not a network fault)
+  bool credentialsHeld(uint32_t nowMs) const { return holdUntilMs_ && (int32_t)(nowMs - holdUntilMs_) < 0; }
+  bool outOfMemory() const { return tlsOutOfMemory(lastTls_); }  // the last failed connect ran out of TLS heap
   void forceReauth() { haveToken_ = false; }
   void drop() { db_.stop(); }
 
@@ -57,6 +61,7 @@ class FirebaseRest {
   char uid_[64] = "";
   bool configured_ = false, haveToken_ = false;
   uint32_t expiryMs_ = 0, holdUntilMs_ = 0;
+  int lastTls_ = 0;
   Backoff authBackoff_;
   SaveTokenFn save_ = nullptr;
   char err_[96] = "";

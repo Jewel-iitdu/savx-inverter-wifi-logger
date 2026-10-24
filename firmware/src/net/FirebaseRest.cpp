@@ -57,6 +57,7 @@ bool FirebaseRest::configure(const String& apiKey, const String& dbUrl, const St
 }
 
 FirebaseRest::AuthRes FirebaseRest::finishAuth(const HttpResult& r, bool isRefresh) {
+  lastTls_ = r.tls;
   if (r.status == 200) {
     bool ok = isRefresh ? upj::parseRefresh(s_authResp, r.bodyLen, s_auth) : upj::parseSignIn(s_authResp, r.bodyLen, s_auth);
     if (!ok) {
@@ -119,6 +120,9 @@ bool FirebaseRest::ensureAuth(uint32_t nowMs) {
   bool stillValid = haveToken_ && (int32_t)(nowMs - (expiryMs_ + cfg::TOKEN_REFRESH_BEFORE_S * 1000UL)) < 0;
   if (!authBackoff_.ready(nowMs) || (holdUntilMs_ && (int32_t)(nowMs - holdUntilMs_) < 0)) return stillValid;
   holdUntilMs_ = 0;
+  // One TLS session at a time (as for OTA, Telegram and e-mail): the largest internal heap block is ~32 KB, too small
+  // for a second handshake next to the RTDB keep-alive session. Costs one RTDB handshake an hour.
+  db_.stop();
   if (rtok_.length()) {
     AuthRes a = refresh();
     if (a == AuthRes::OK) {
@@ -157,6 +161,7 @@ FirebaseRest::Res FirebaseRest::rtdb(const char* method, const char* path, const
       return out;
     }
     HttpResult r = db_.request(method, s_path, "application/json", body, len, resp, cap, true);
+    lastTls_ = r.tls;
     out.http = r.status;
     out.len = r.bodyLen;
     out.truncated = r.truncated;
