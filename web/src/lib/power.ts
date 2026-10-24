@@ -68,7 +68,8 @@ export function useBillView(): PowerView {
 /** The grid power in viewLive(l, p) is the meter's real W (show it in W, whatever the power unit). */
 export const gridPowerMetered = (l: Live | null | undefined, p: PowerView): boolean => p.meter && isNum(l?.mw);
 /** Line mode with the meter: viewLive's load is grid (meter) + solar - battery charging, in real W, not VA x pf.
- *  The inverter's VA read about 2x the real load at night (414 VA vs 200 W at the meter, 2026-10-24). */
+ *  The inverter's VA read about 2x the real load at night (414 VA vs 200 W at the meter, 2026-10-24 01:40) and 8x
+ *  the next evening (1,027 VA vs 126 W, power factor 0.37 at the meter, 2026-10-24 20:30). */
 export const loadPowerMetered = (l: Live | null | undefined, p: PowerView): boolean =>
   p.meter && isNum(l?.mw) && l?.md === 'L';
 // The battery's small discharge in line mode is the inverter's own standby draw, not load: only charging is taken off.
@@ -93,7 +94,9 @@ export function measuredEld(v: { egm?: number; epv?: number; edis?: number; ech?
 
 /** A meter reading at most this old (live `mage`, s) shares its payload with an inverter VA within ~2 s of it. */
 export const METER_FRESH_AGE = 3;
-export const METER_K_MIN = 0.2;
+// 0.2 until 2026-10-24: the real ratio was 0.12 that evening, so between readings the app showed VA x 0.2 = 205 W for
+// a 126 W load (and 126 W again at each reading)
+export const METER_K_MIN = 0.05;
 export const METER_K_MAX = 1;
 /** A learned k is used for this long (s of live `ts`) after its reading: after a pause (app hidden, grid off) the
  *  load mix may have changed, so the meter's own value is shown until the next fresh reading. */
@@ -101,7 +104,7 @@ export const METER_K_TTL = 120;
 const K_MIN_VA = 20; // below this the ratio is noise
 
 /** k = meter load ÷ the inverter's output (live `w`: the VA on this inverter) from a payload with a fresh meter
- *  reading in line mode, clamped to [0.2, 1]; null when the payload cannot give one. */
+ *  reading in line mode, clamped to [METER_K_MIN, 1]; null when the payload cannot give one. */
 export function meterK(l: Live | null | undefined, p: PowerView): number | null {
   if (!l || !loadPowerMetered(l, p) || !isNum(l.mage) || l.mage > METER_FRESH_AGE || !isNum(l.w) || l.w < K_MIN_VA) return null;
   return clamp(meterLoad(l) / l.w, METER_K_MIN, METER_K_MAX);
@@ -144,7 +147,16 @@ export function viewLive(l: Live | null, p: PowerView, k: number | null = null):
     egr: isNum(l.egm) ? l.egm : v.egr,
     eld: eld ?? v.eld,
     w: load ?? v.w,
+    ld: load !== null ? measuredLd(l, load) : v.ld,
   };
+}
+
+/** Load % of rating for a measured load: the inverter's own % (its output VA / its rating, 3,200 VA here) scaled by
+ *  measured load / VA, so it uses the inverter's rating without knowing it (QPIRI says 3,600 on this unit). Without
+ *  a usable VA (dead band) there is no rating to use: undefined, shown as "–". Before, the inverter's % was shown next
+ *  to the measured W: "219 W · 34 %" on a 3.2 kW inverter (2026-10-24). */
+function measuredLd(l: Live, load: number): number | undefined {
+  return isNum(l.ld) && isNum(l.w) && l.w >= K_MIN_VA ? Math.round((l.ld * load) / l.w) : undefined;
 }
 
 // The last k learned from a fresh reading, kept for the session and shared by every page (Live, History today, …).
