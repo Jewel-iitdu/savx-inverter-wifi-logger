@@ -21,6 +21,7 @@ struct NotifyResult {
   bool ok = false;
   int httpCode = 0;
   bool rateLimited = false;  // not attempted: too soon after the previous message (retry later)
+  int tls = 0;               // mbedTLS error code of a failed connect (1.0.0)
   char error[48] = "";
 };
 

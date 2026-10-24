@@ -2,6 +2,7 @@
 #include "net/NotifyFormat.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "model/JsonOut.h"
@@ -142,6 +143,28 @@ size_t ntfyJson(const AlertEvent& e, const char* topic, const char* clickUrl, ui
   return j.ok() ? j.len() : 0;
 }
 
+// 1.0.0 (owner report 2026-10-24 21:00): the daily summary's body came in English under the Bangla title. Its numbers
+// are read back from AlertEngine's English text (no new event fields); any other wording keeps the English text.
+static bool summaryBn(const char* msg, char* out, size_t n) {
+  static const char* const KEYS[] = {"PV ", "load ", "grid ", "battery in ", "out "};
+  double v[5];
+  const char* p = msg;
+  for (int i = 0; i < 5; i++) {
+    p = strstr(p, KEYS[i]);
+    if (!p) return false;
+    p += strlen(KEYS[i]);
+    char* end;
+    v[i] = strtod(p, &end);
+    if (end == p) return false;
+    p = end;
+  }
+  char a[300];
+  snprintf(a, sizeof a, "সোলার: %.1f kWh\nলোড: %.1f kWh\nগ্রিড: %.1f kWh (আনুমানিক)\nব্যাটারি চার্জ / খরচ: %.1f / %.1f kWh",
+           v[0], v[1], v[2], v[3], v[4]);
+  bnDigits(a, out, n);
+  return true;
+}
+
 static void telegramTextBn(const AlertEvent& e, uint32_t now, char* text, size_t n) {
   const LabelBn* l = findBn(e.type);
   bool clear = !strcmp(e.st, "clear");
@@ -170,7 +193,9 @@ static void telegramTextBn(const AlertEvent& e, uint32_t now, char* text, size_t
     int m = snprintf(text + k, n - k, "\nসময়: %s%s", clock, late);
     if (m > 0 && (size_t)(k + m) < n) k += m;
   }
-  if (e.msg[0] && (size_t)k < n) snprintf(text + k, n - k, "\n%s", e.msg);
+  char body[400];
+  const char* detail = !strcmp(e.type, "DAILY_SUMMARY") && summaryBn(e.msg, body, sizeof body) ? body : e.msg;
+  if (detail[0] && (size_t)k < n) snprintf(text + k, n - k, "\n%s", detail);
 }
 
 size_t telegramJson(const AlertEvent& e, const char* chatId, uint32_t now, bool bangla, char* out, size_t n) {

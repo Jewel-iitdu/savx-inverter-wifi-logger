@@ -251,6 +251,10 @@ static void hStatus() {
   j.b("email", up.emailOn);
   j.u("mailOk", up.mailsOk);
   j.u("mailFail", up.mailsFail);
+  j.s("mailErr", up.mailErr);
+  j.u("tgOk", up.tgOk);
+  j.u("tgFail", up.tgFail);
+  j.s("tgErr", up.tgErr);
   j.i("hcCode", up.lastHcCode);
   j.close();
   {

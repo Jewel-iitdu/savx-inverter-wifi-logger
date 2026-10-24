@@ -1,6 +1,8 @@
 // Budget.cpp - see Budget.h.
 #include "net/Budget.h"
 
+#include <stdio.h>
+
 void Backoff::fail(uint32_t nowMs) {
   uint32_t d = cfg::BACKOFF_MIN_MS;
   for (uint8_t i = 0; i < step_ && d < cfg::BACKOFF_MAX_MS; i++) d *= 2;
@@ -37,6 +39,25 @@ uint32_t Budget::liveMs(int liveSec) const {
   if (l >= 2) return 0;
   if (l == 1 && liveSec < 60) liveSec = 60;
   return (uint32_t)liveSec * 1000UL;
+}
+
+bool alertRefused(int code, bool smtp) {
+  if (smtp) return code >= 500 && code < 600;
+  return code >= 400 && code < 500 && code != 408 && code != 429;
+}
+
+uint32_t alertRetryMs(uint8_t failed, bool refused) {
+  static const uint16_t DELAY_S[] = {30, 60, 120, 300, 600, 900, 1800, 1800, 3600, 3600, 3600, 3600};
+  if (failed == 0) return 0;
+  if (refused && failed >= 3) return 0;
+  if (failed > sizeof DELAY_S / sizeof DELAY_S[0]) return 0;
+  return DELAY_S[failed - 1] * 1000UL;
+}
+
+void alertErrText(int tls, const char* err, char* out, size_t n) {
+  if (!n) return;
+  if (tls < 0) snprintf(out, n, "TLS -0x%04X%s", (unsigned)-tls, tlsOutOfMemory(tls) ? " out of memory" : "");
+  else snprintf(out, n, "%s", err ? err : "");
 }
 
 bool tlsOutOfMemory(int mbedtlsErr) {

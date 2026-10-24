@@ -35,6 +35,10 @@ char check_[48] = "";   // the boot check of the GitHub download path (status.ot
 char repo_[84] = "";
 uint32_t handled_ = 0;
 bool probation_ = false;
+bool remoteInstall_ = false;  // this image came by run() (needs GitHub to be kept)
+bool probeOk_ = false;
+bool restartToRetry_ = false;
+uint32_t retryCode_ = 0;
 uint32_t tryCode_ = 0;
 uint8_t buf_[4096];
 
@@ -141,7 +145,8 @@ void probe() {
   // GitHub redirects .../releases/latest/download/<file> to the newest release's file
   String url = String("https://github.com/") + repo_ + "/releases/latest/download/SHA256SUMS.txt";
   char res[48];
-  if (getText(cli, http, url, sums, sizeof sums, n, code, err, sizeof err)) {
+  bool okNow = getText(cli, http, url, sums, sizeof sums, n, code, err, sizeof err);
+  if (okNow) {
     char v[16] = "?";
     ota::versionInSums(sums, n, v, sizeof v);
     snprintf(res, sizeof res, "GitHub ok, latest %s", v);
@@ -152,11 +157,25 @@ void probe() {
   {
     LockGuard g(&lock_);
     snprintf(check_, sizeof check_, "%s", res);
+    probeOk_ = okNow;
   }
   Serial.printf("[ota] check: %s (heap block %u)\n", res, (unsigned)ESP.getMaxAllocHeap());
 }
 
 const char* repo() { return repo_; }
+
+bool probeOk() {
+  LockGuard g(&lock_);
+  return probeOk_;
+}
+
+bool restartToRetry() { return restartToRetry_; }
+
+uint32_t takeRetry() {
+  uint32_t c = retryCode_;
+  retryCode_ = 0;
+  return c;
+}
 
 bool setRepo(const char* r) {
   if (r && *r && !ota::repoValid(r)) return false;
@@ -182,12 +201,15 @@ void begin() {
   snprintf(repo_, sizeof repo_, "%s", r.c_str());
   handled_ = getU32("handled");
   tryCode_ = getU32("try");
+  retryCode_ = getU32("retry");
+  if (retryCode_) putU32("retry", 0);  // one retry per request, even if this boot fails too
   uint32_t own = ota::versionCode(FW_VERSION);
   char tv[16];
   ota::versionStr(tryCode_, tv, sizeof tv);
   esp_ota_img_states_t st;
   if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY) {
     probation_ = true;
+    remoteInstall_ = tryCode_ != 0;  // /update (local) installs do not set it
     setStatus("checking %s after the update", FW_VERSION);
     Serial.printf("[ota] %s runs on probation (rollback armed)\n", FW_VERSION);
   } else if (tryCode_) {
@@ -198,9 +220,10 @@ void begin() {
   }
 }
 
-void probationLoop(bool cloudOk) {
+void probationLoop(bool cloudOk, bool cfgOk) {
   if (!probation_) return;
-  switch (ota::probation(millis(), cloudOk, cfg::OTA_PROBATION_MIN_MS, cfg::OTA_PROBATION_MAX_MS)) {
+  bool githubOk = !remoteInstall_ || !repo_[0] || probeOk();
+  switch (ota::probation(millis(), cloudOk, cfgOk, githubOk, cfg::OTA_PROBATION_MIN_MS, cfg::OTA_PROBATION_MAX_MS)) {
     case ota::Probation::CONFIRM:
       esp_ota_mark_app_valid_cancel_rollback();
       probation_ = false;
@@ -209,7 +232,8 @@ void probationLoop(bool cloudOk) {
       Serial.printf("[ota] %s confirmed\n", FW_VERSION);
       break;
     case ota::Probation::ROLLBACK:
-      Serial.println(F("[ota] no cloud since the update: rolling back to the previous image"));
+      Serial.printf("[ota] not proven in 10 min (cloud %d, cfg %d, GitHub %d): rolling back to the previous image\n",
+                    cloudOk, cfgOk, githubOk);
       delay(100);
       esp_ota_mark_app_invalid_rollback_and_reboot();  // does not return
       break;
@@ -226,6 +250,13 @@ bool run(uint32_t code) {
     return false;
   }
   if (!ota::heapOk(ESP.getMaxAllocHeap(), ESP.getFreeHeap())) {
+    if (getU32("retried") != handled_) {  // 1.0.0: a restart clears the fragmentation; once more right after it
+      putU32("retried", handled_);       // (once per request: handled_ is this request's time)
+      putU32("retry", code);
+      restartToRetry_ = true;
+      setStatus("low memory: restarting to install %s", v);
+      return false;
+    }
     setStatus("failed: low memory (%u/%u)", (unsigned)ESP.getMaxAllocHeap(), (unsigned)ESP.getFreeHeap());
     return false;
   }

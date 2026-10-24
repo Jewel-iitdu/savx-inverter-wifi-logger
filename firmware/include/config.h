@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.9.9"
+#define FW_VERSION "1.0.0"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------
@@ -144,7 +144,6 @@ constexpr uint32_t NETWD_SILENT_RESTART_MS = 6UL * 3600000UL;        // 0.9.9: n
 constexpr uint32_t WIFI_KICK_MS = 2UL * 60000UL, WIFI_RESTART_MS = 30UL * 60000UL;
 constexpr uint32_t WIFI_RESTART_NEVER_UP_MS = 6UL * 3600000UL;
 constexpr uint8_t EVENT_MAX_TRIES = 3;              // permanent RTDB errors per event before it is dropped (edrop)
-constexpr uint8_t PUSH_MAX_TRIES = 3;
 constexpr uint32_t PRUNE_AFTER_MIN = 5;             // prune at/after 00:05 local
 constexpr uint32_t BACKLOG_STUCK_S = 6UL * 3600UL;
 
@@ -196,5 +195,6 @@ constexpr int32_t OTA_CONNECT_MS = 10000;
 constexpr uint32_t OTA_IO_MS = 20000;               // no data for this long: give up
 constexpr uint32_t OTA_TOTAL_MS = 5UL * 60000UL;
 constexpr uint32_t OTA_PROBE_AFTER_MS = 60000;      // 0.9.6: check the GitHub path once, a minute after boot
+constexpr uint32_t OTA_PROBE_RETRY_MS = 120000;     // 1.0.0: on probation, again every 2 min while it fails
 
 }  // namespace cfg

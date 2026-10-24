@@ -14,6 +14,8 @@ PIO="${PIO:-pio}"
 CORE="${PLATFORMIO_CORE_DIR:-$HOME/.platformio}"
 cd "$ROOT/firmware"
 VER="$(grep -o 'FW_VERSION "[0-9.]*"' include/config.h | grep -o '[0-9][0-9.]*')"
+# Version rule A.B.C: B and C are 0-9 (after x.y.9 comes x.(y+1).0, after x.9.9 comes (x+1).0.0)
+[[ "$VER" =~ ^[0-9]+\.[0-9]\.[0-9]$ ]] || { echo "FW_VERSION $VER breaks the A.B.C rule (B and C 0-9)" >&2; exit 1; }
 OUT="${1:-$ROOT/release/v$VER}"
 
 map() { printf -- '-ffile-prefix-map=%s=%s -fmacro-prefix-map=%s=%s ' "$1" "$2" "$1" "$2"; }

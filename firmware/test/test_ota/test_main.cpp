@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unity.h>
 
+#include "config.h"
 #include "net/OtaPlan.h"
 #include "net/UplinkJson.h"
 
@@ -82,7 +83,8 @@ void test_decide_once_and_only_newer() {
   TEST_ASSERT_EQUAL_INT((int)Go::START, (int)ota::decide(903, 5, 902, 0, true));
   TEST_ASSERT_EQUAL_INT((int)Go::NONE, (int)ota::decide(903, 5, 902, 5, true));  // already acted on: no retry loop
   TEST_ASSERT_EQUAL_INT((int)Go::START, (int)ota::decide(903, 6, 902, 5, true));  // the owner asked again
-  TEST_ASSERT_EQUAL_INT((int)Go::NOT_NEWER, (int)ota::decide(903, 6, 903, 5, true));
+  TEST_ASSERT_EQUAL_INT((int)Go::RESTART, (int)ota::decide(903, 6, 903, 5, true));  // 1.0.0: same version = restart
+  TEST_ASSERT_EQUAL_INT((int)Go::NONE, (int)ota::decide(903, 6, 903, 6, true));     // ...once
   TEST_ASSERT_EQUAL_INT((int)Go::NOT_NEWER, (int)ota::decide(901, 6, 903, 5, true));  // no downgrades
   TEST_ASSERT_EQUAL_INT((int)Go::NO_REPO, (int)ota::decide(903, 6, 902, 5, false));
   TEST_ASSERT_EQUAL_INT((int)Go::NONE, (int)ota::decide(903, 0, 902, 5, true));
@@ -97,14 +99,35 @@ void test_heap_gate_accepts_the_owners_logger() {
   TEST_ASSERT_FALSE(ota::heapOk(31732, 30000));  // not enough in total for a session
 }
 
+// Owner's version rule (2026-10-24): A.B.C, B and C 0-9, rolling over; this build must follow it.
+void test_version_rule() {
+  TEST_ASSERT_TRUE_MESSAGE(ota::versionRuleOk(FW_VERSION), FW_VERSION);
+  TEST_ASSERT_TRUE(ota::versionRuleOk("1.0.0"));
+  TEST_ASSERT_TRUE(ota::versionRuleOk("0.9.9"));
+  TEST_ASSERT_TRUE(ota::versionRuleOk("12.9.9"));
+  TEST_ASSERT_FALSE(ota::versionRuleOk("0.9.10"));
+  TEST_ASSERT_FALSE(ota::versionRuleOk("1.10.0"));
+  TEST_ASSERT_FALSE(ota::versionRuleOk("1.0"));
+  TEST_ASSERT_FALSE(ota::versionRuleOk("100.0.0"));
+  // the order holds across each rollover, also for the 0.9.x loggers that read cfg.ota
+  TEST_ASSERT_TRUE(ota::versionCode("1.0.0") > ota::versionCode("0.9.9"));
+  TEST_ASSERT_TRUE(ota::versionCode("1.1.0") > ota::versionCode("1.0.9"));
+  TEST_ASSERT_TRUE(ota::versionCode("2.0.0") > ota::versionCode("1.9.9"));
+}
+
 void test_probation() {
   using ota::Probation;
   const uint32_t MIN = 120000, MAX = 600000;
-  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(60000, true, MIN, MAX));
-  TEST_ASSERT_EQUAL_INT((int)Probation::CONFIRM, (int)ota::probation(130000, true, MIN, MAX));
-  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(300000, false, MIN, MAX));
-  TEST_ASSERT_EQUAL_INT((int)Probation::ROLLBACK, (int)ota::probation(600000, false, MIN, MAX));
-  TEST_ASSERT_EQUAL_INT((int)Probation::CONFIRM, (int)ota::probation(600000, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(60000, true, true, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::CONFIRM, (int)ota::probation(130000, true, true, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(300000, false, true, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::ROLLBACK, (int)ota::probation(600000, false, true, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::CONFIRM, (int)ota::probation(600000, true, true, true, MIN, MAX));
+  // 1.0.0: an image that writes to the cloud but cannot read cfg (update requests) or reach GitHub is not kept
+  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(300000, true, false, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::ROLLBACK, (int)ota::probation(600000, true, false, true, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::WAIT, (int)ota::probation(300000, true, true, false, MIN, MAX));
+  TEST_ASSERT_EQUAL_INT((int)Probation::ROLLBACK, (int)ota::probation(600000, true, true, false, MIN, MAX));
 }
 
 void test_cfg_ota_fields() {
@@ -129,6 +152,7 @@ int main(int, char**) {
   RUN_TEST(test_version_in_sums);
   RUN_TEST(test_decide_once_and_only_newer);
   RUN_TEST(test_heap_gate_accepts_the_owners_logger);
+  RUN_TEST(test_version_rule);
   RUN_TEST(test_probation);
   RUN_TEST(test_cfg_ota_fields);
   return UNITY_END();

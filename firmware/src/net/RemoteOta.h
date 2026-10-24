@@ -7,7 +7,9 @@
 namespace rota {
 
 void begin();                       // at boot: repo (seeded from OTA_REPO_DEFAULT), probation, last update's outcome
-void probationLoop(bool cloudOk);   // first run of a new image: confirm it, or roll back to the previous one
+// first run of a new image: confirm it, or roll back to the previous one (ota::probation). cloudOk / cfgOk: this boot
+// wrote to the cloud / read cfg, whatever the clock; the GitHub check is required after a remote update.
+void probationLoop(bool cloudOk, bool cfgOk);
 bool inProbation();
 
 const char* repo();                 // "owner/repo" of the releases ("" = remote update off)
@@ -20,6 +22,11 @@ void status(char* out, size_t cap); // short state for status.ota and /api/statu
 // "GitHub ok, latest 0.9.7" or the HTTP / TLS error). The uplink connection must be dropped first.
 void probe();
 void check(char* out, size_t cap);
+bool probeOk();                     // the last probe() of this boot reached GitHub
+
+// 1.0.0: an update refused for low memory restarts the logger and runs first thing after the boot (once per request).
+bool restartToRetry();              // run() asked for that restart
+uint32_t takeRetry();               // at boot: the version to install now (0 = none); clears it
 
 // Download, check and install release `code`. true: installed, the caller writes the status and restarts.
 // false: nothing installed (status says why). Blocks ~0.5-2 min; the uplink connection must be dropped first.

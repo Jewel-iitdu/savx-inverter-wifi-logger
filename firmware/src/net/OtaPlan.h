@@ -13,6 +13,9 @@ namespace ota {
 // "0.9.3" -> 903 (major*10000 + minor*100 + patch, each 0..99); 0 = not a version
 uint32_t versionCode(const char* v);
 void versionStr(uint32_t code, char* out, size_t cap);
+// Owner's rule (2026-10-24): A.B.C with B and C 0-9; after x.y.9 comes x.(y+1).0, after x.9.9 comes (x+1).0.0. A grows
+// without a cap of its own; the version code (and the cfg.ota rule, <= 999999) take it up to 99.
+bool versionRuleOk(const char* v);
 
 // owner/repo with GitHub's characters only (letters, digits, '-', '_', '.'), one slash
 bool repoValid(const char* repo);
@@ -28,15 +31,19 @@ bool parseSums(const char* text, size_t n, const char* file, uint8_t sha[32]);
 // The version of the OTA image listed in a SHA256SUMS.txt ("savx-logger-<ver>-ota.bin"); false if there is none.
 bool versionInSums(const char* text, size_t n, char* ver, size_t cap);
 
-enum class Go : uint8_t { NONE, START, NOT_NEWER, NO_REPO };
-// A request (code, at) is handled once: `handledAt` is the request time of the last one acted on.
+enum class Go : uint8_t { NONE, START, NOT_NEWER, NO_REPO, RESTART };
+// A request (code, at) is handled once: `handledAt` is the request time of the last one acted on. 1.0.0: a request
+// for the version that runs is a remote restart (the app's "Restart logger"; no new rule line needed).
 Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt, bool repoSet);
 
 // Enough internal RAM for the TLS download (largest free block, total free; cfg::OTA_MIN_BLOCK / OTA_MIN_FREE)
 bool heapOk(uint32_t maxBlock, uint32_t freeHeap);
 
 enum class Probation : uint8_t { WAIT, CONFIRM, ROLLBACK };
-// The image's first run: confirm after a cloud write and minMs of uptime; roll back at maxMs without one.
-Probation probation(uint32_t upMs, bool cloudOk, uint32_t minMs, uint32_t maxMs);
+// The image's first run: confirm after minMs of uptime once it has shown that a later fix can still reach it, else roll
+// back at maxMs. 1.0.0: before, one cloud write was enough (and only with a valid clock), so an image whose cfg read
+// or GitHub download path was broken would have been kept and remote updates lost for good. Now this boot must have
+// written to the cloud, read cfg (where update requests come from) and, after a remote update, reached GitHub.
+Probation probation(uint32_t upMs, bool cloudOk, bool cfgOk, bool githubOk, uint32_t minMs, uint32_t maxMs);
 
 }  // namespace ota

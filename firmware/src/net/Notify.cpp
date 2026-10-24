@@ -60,6 +60,7 @@ class Notifier : public INotifier {
     SmtpResult s = smtpSend(smtp_, roots::NTFY, fromName, to, nTo, subject, body);
     r.ok = s.ok;
     r.httpCode = s.code;
+    r.tls = s.tls;
     if (!s.ok) snprintf(r.error, sizeof r.error, "%s", s.err);
     return r;
   }
@@ -167,6 +168,7 @@ class Notifier : public INotifier {
   }
   static NotifyResult& done(NotifyResult& r, const HttpResult& h, int want) {
     r.httpCode = h.status;
+    r.tls = h.tls;
     r.ok = h.status == want;
     if (!r.ok) {
       if (h.status < 0) snprintf(r.error, sizeof r.error, "%s", h.err);

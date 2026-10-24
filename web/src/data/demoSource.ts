@@ -503,6 +503,13 @@ function statusNow(): Status {
     rq: Math.floor((now % 86400) / 7),
     lok: now - 3,
     cok: now - (now % 60),
+    chipC: 44.8,
+    tgOk: 3,
+    tgFail: 1,
+    tgErr: 'TLS -0x7F00 out of memory',
+    tgErrAt: now - 2 * 3600,
+    mailOk: 2,
+    mailFail: 0,
   };
 }
 

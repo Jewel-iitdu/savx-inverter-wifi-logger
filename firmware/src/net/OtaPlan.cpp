@@ -17,6 +17,11 @@ uint32_t versionCode(const char* v) {
   return a * 10000 + b * 100 + c;
 }
 
+bool versionRuleOk(const char* v) {
+  uint32_t c = versionCode(v);
+  return c != 0 && c / 100 % 100 <= 9 && c % 100 <= 9;
+}
+
 void versionStr(uint32_t code, char* out, size_t cap) {
   snprintf(out, cap, "%u.%u.%u", (unsigned)(code / 10000), (unsigned)(code / 100 % 100), (unsigned)(code % 100));
 }
@@ -111,7 +116,8 @@ bool versionInSums(const char* text, size_t n, char* ver, size_t cap) {
 
 Go decide(uint32_t reqCode, uint32_t reqAt, uint32_t ownCode, uint32_t handledAt, bool repoSet) {
   if (!reqCode || !reqAt || reqAt == handledAt) return Go::NONE;
-  if (reqCode <= ownCode) return Go::NOT_NEWER;
+  if (reqCode == ownCode) return Go::RESTART;
+  if (reqCode < ownCode) return Go::NOT_NEWER;
   if (!repoSet) return Go::NO_REPO;
   return Go::START;
 }
@@ -120,8 +126,8 @@ bool heapOk(uint32_t maxBlock, uint32_t freeHeap) {
   return maxBlock >= cfg::OTA_MIN_BLOCK && freeHeap >= cfg::OTA_MIN_FREE;
 }
 
-Probation probation(uint32_t upMs, bool cloudOk, uint32_t minMs, uint32_t maxMs) {
-  if (cloudOk && upMs >= minMs) return Probation::CONFIRM;
+Probation probation(uint32_t upMs, bool cloudOk, bool cfgOk, bool githubOk, uint32_t minMs, uint32_t maxMs) {
+  if (cloudOk && cfgOk && githubOk && upMs >= minMs) return Probation::CONFIRM;
   if (upMs >= maxMs) return Probation::ROLLBACK;
   return Probation::WAIT;
 }

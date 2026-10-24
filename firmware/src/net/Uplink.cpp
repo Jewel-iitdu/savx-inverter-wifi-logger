@@ -79,6 +79,8 @@ mrec::Daily fin_;
 bool finHave_ = false;
 uint32_t otaReq_ = 0;       // 0.9.2: a remote update to run (version code)
 bool otaProbed_ = false;    // 0.9.6: the GitHub download path was checked this boot
+uint32_t tProbe_ = 0;
+bool restartReq_ = false;   // 1.0.0: the app asked for a restart (an update request for the running version)
 bool meterFinHave_ = false;  // 0.9.0 grid meter: a finished day's metered energy to write
 int32_t meterFinDay_ = 0, meterFinWh_ = -1;
 Prune prune_ = Prune::IDLE;
@@ -136,6 +138,7 @@ bool ok(const FirebaseRest::Res& r, const char* what) {
   if (r.http > 0) netwd.onCloudOk(now);  // any HTTP answer: the network path works
   if (r.kind == FirebaseRest::Kind::OK) {
     dbBackoff.ok();
+    st_.cloudOkBoot = true;
     uint32_t ep = timeSync.epochOrZero();
     if (ep) st_.lastCloudOkEpoch = ep;
     return true;
@@ -149,9 +152,10 @@ bool ok(const FirebaseRest::Res& r, const char* what) {
 
 bool canGo() { return dbBackoff.ready(millis()) && fb.authOk(); }
 
-void ensureHeap() {  // a one-shot TLS session needs ~22-42 KB of internal heap (V2 E9)
-  if (ESP.getMaxAllocHeap() < 50000) fb.drop();
-}
+// One TLS session at a time: a one-shot session (Telegram, e-mail, ntfy, Healthchecks) needs ~22-42 KB of internal heap
+// (V2 E9), more than is left next to the RTDB keep-alive session (largest block ~32 KB). Until 1.0.0 the RTDB session
+// was closed only below a 50 KB block, as 0.9.8 found for the token refresh. Costs one RTDB handshake per send.
+void ensureHeap() { fb.drop(); }
 
 int liveSec() { return haveCloudCfg_ ? cloudCfg_.liveSec : 10; }
 
@@ -229,9 +233,13 @@ void processMail(uint32_t now) {
     } else {
       st_.mailsFail++;
       snprintf(st_.lastError, sizeof st_.lastError, "e-mail: %s", r.error);
-      Serial.printf("[mail] %s failed: %s\n", p.e.type, r.error);
-      if (++p.mailTries >= cfg::PUSH_MAX_TRIES) p.mailDone = true;
-      p.nextMailMs = now + 60000UL * p.mailTries;
+      alertErrText(r.tls, r.error, st_.mailErr, sizeof st_.mailErr);
+      st_.mailErrAt = timeSync.epochOrZero();
+      uint32_t wait = alertRetryMs(++p.mailTries, alertRefused(r.httpCode, true));
+      Serial.printf("[mail] %s failed (try %u, tls %d): %s; %s\n", p.e.type, p.mailTries, r.tls, r.error,
+                    wait ? "retrying" : "giving up");
+      if (wait) p.nextMailMs = now + wait;
+      else p.mailDone = true;
     }
     return;  // at most one SMTP session per tick
   }
@@ -252,8 +260,9 @@ void processPushes(uint32_t now) {
       } else {
         st_.pushesFail++;
         snprintf(st_.lastError, sizeof st_.lastError, "ntfy: %s", r.error);
-        if (++p.pushTries >= cfg::PUSH_MAX_TRIES) p.pushDone = true;
-        p.nextPushMs = now + 30000UL * p.pushTries;
+        uint32_t wait = alertRetryMs(++p.pushTries, alertRefused(r.httpCode, false));
+        if (wait) p.nextPushMs = now + wait;
+        else p.pushDone = true;
       }
     }
     if (!p.tgDone && sends < 2 && (int32_t)(now - p.nextTgMs) >= 0) {
@@ -263,10 +272,17 @@ void processPushes(uint32_t now) {
       sends++;
       if (r.ok) {
         p.tgDone = true;
+        st_.tgOk++;
       } else {
+        st_.tgFail++;
         snprintf(st_.lastError, sizeof st_.lastError, "telegram: %s", r.error);
-        if (++p.tgTries >= cfg::PUSH_MAX_TRIES) p.tgDone = true;  // Telegram may be blocked in BD (V2 §3.4)
-        p.nextTgMs = now + 30000UL * p.tgTries;
+        alertErrText(r.tls, r.error, st_.tgErr, sizeof st_.tgErr);
+        st_.tgErrAt = timeSync.epochOrZero();
+        uint32_t wait = alertRetryMs(++p.tgTries, alertRefused(r.httpCode, false));
+        Serial.printf("[tg] %s failed (try %u, tls %d): %s; %s\n", p.e.type, p.tgTries, r.tls, r.error,
+                      wait ? "retrying" : "giving up");
+        if (wait) p.nextTgMs = now + wait;
+        else p.tgDone = true;  // Telegram may be blocked in BD (V2 §3.4)
       }
     }
   }
@@ -365,6 +381,17 @@ size_t buildStatus(char* out, size_t cap, uint32_t ep) {
   rota::status(s.ota, sizeof s.ota);
   rota::check(s.otachk, sizeof s.otachk);
   if (strlen(rota::repo()) < sizeof s.repo) snprintf(s.repo, sizeof s.repo, "%s", rota::repo());
+  s.chipC = temperatureRead();  // 1.0.0 (owner request): the ESP32's own temperature
+  s.tgOk = st_.tgOk;
+  s.tgFail = st_.tgFail;
+  snprintf(s.tgErr, sizeof s.tgErr, "%s", st_.tgErr);
+  s.tgErrAt = st_.tgErrAt;
+  s.mailOk = st_.mailsOk;
+  s.mailFail = st_.mailsFail;
+  snprintf(s.mailErr, sizeof s.mailErr, "%s", st_.mailErr);
+  s.mailErAt = st_.mailErrAt;
+  s.tgOn = st_.telegramOn;
+  s.mailOn = st_.emailOn;
   meter::Snap ms = meter::snap();
   if (ms.configured || !ms.enabled) {
     if (ms.fresh) snprintf(s.meter, sizeof s.meter, "ok %d.%d %lus", ms.proto / 10, ms.proto % 10, (unsigned long)ms.ageS);
@@ -422,7 +449,7 @@ bool doMinute(uint32_t now, uint32_t ep, int32_t today) {
   }
   bool withStatus = liveRecs || statusDue;
   if (withStatus) {
-    char sj[720];
+    char sj[1024];
     if (buildStatus(sj, sizeof sj, ep)) p.add("status", sj);
   }
   AlertStateOut as[cfg::MAX_RULES];
@@ -482,11 +509,13 @@ bool doCfg(uint32_t now) {
     char v[16];
     ota::versionStr(c.c.ota, v, sizeof v);
     if (go == ota::Go::START) otaReq_ = c.c.ota;
+    else if (go == ota::Go::RESTART) restartReq_ = true;
     else if (go == ota::Go::NOT_NEWER) rota::setStatus("%s is not newer than %s", v, FW_VERSION);
     else rota::setStatus("failed: no release repo on the logger");
     tStatus_ = millis() - cfg::STATUS_MS;  // report it with the next status write
   }
   haveCloudCfg_ = true;
+  st_.cfgOkBoot = true;
   cloudRev_ = c.hasRev ? c.alertsRev : 0;
   st_.cloudAlertsRev = cloudRev_;
   if (cloudRev_ != loadedRev_) alertsDue_ = true;
@@ -580,24 +609,45 @@ bool doMeterDay() {
   return true;
 }
 
-// 0.9.2 remote update: one TLS session at a time (drop the cloud one), download / check / install, report, restart
+void pushStatus(const char* what) {
+  char sj[1024];
+  if (buildStatus(sj, sizeof sj, timeSync.epochOrZero())) {
+    upj::Patch p(body_, bodyCap_);
+    p.add("status", sj);
+    size_t n = p.close();
+    ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), what);
+  }
+}
+
+// 0.9.2 remote update: one TLS session at a time (drop the cloud one), download / check / install, report, restart.
+// 1.0.0: refused for low memory, it restarts and runs again right after the boot (rota::takeRetry).
 void runOta() {
   uint32_t code = otaReq_;
   otaReq_ = 0;
   fb.drop();
   bool installed = rota::run(code);
-  char sj[720];
-  if (buildStatus(sj, sizeof sj, timeSync.epochOrZero())) {
-    upj::Patch p(body_, bodyCap_);
-    p.add("status", sj);
-    size_t n = p.close();
-    ok(fb.rtdb("PATCH", "", body_, n, resp_, respCap_), "ota status");
-  }
-  if (installed) {
+  pushStatus("ota status");
+  if (installed || rota::restartToRetry()) {
     settings.setStr("sys", "plannedRb", "update");  // log-only restart (0.8.0)
     delay(500);
     ESP.restart();
   }
+}
+
+// 1.0.0 remote restart (Settings > Actions > Restart logger): log-only, like a restart from the local page
+void restartNow() {
+  rota::setStatus("restarting on request");
+  pushStatus("restart status");
+  settings.setStr("sys", "plannedRb", "app");
+  delay(500);
+  ESP.restart();
+}
+
+// 0.9.6: the GitHub download path once per boot, a minute after it. 1.0.0: on probation at once, and again every
+// 2 min while it fails, since a remote update is kept only after it worked (ota::probation).
+bool probeDue(uint32_t now) {
+  if (!otaProbed_) return rota::inProbation() || now > cfg::OTA_PROBE_AFTER_MS;
+  return rota::inProbation() && !rota::probeOk() && (uint32_t)(now - tProbe_) >= cfg::OTA_PROBE_RETRY_MS;
 }
 
 bool doMtd(uint32_t now) {
@@ -845,10 +895,14 @@ void loop() {
   if (ops < 3) step(doMtd(millis()));
   if (ops < 3) step(doDiag(millis()));
   if (ops < 3) step(doPrune(millis(), ep, today));
-  if (otaReq_) {
+  if (!otaReq_) otaReq_ = rota::takeRetry();  // 1.0.0: an update that restarted for memory runs first
+  if (restartReq_) {
+    restartNow();
+  } else if (otaReq_) {
     runOta();
-  } else if (!otaProbed_ && st_.lastCloudOkEpoch && millis() > cfg::OTA_PROBE_AFTER_MS && rota::repo()[0]) {
-    otaProbed_ = true;  // 0.9.6: once per boot, the same TLS path as an update (one session at a time)
+  } else if (st_.cloudOkBoot && rota::repo()[0] && probeDue(millis())) {
+    otaProbed_ = true;  // the same TLS path as an update (one session at a time)
+    tProbe_ = millis();
     fb.drop();
     rota::probe();
     tStatus_ = millis() - cfg::STATUS_MS;

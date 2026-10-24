@@ -92,6 +92,17 @@ export interface Status {
   ota?: string; // fw 0.9.2: remote firmware update state ("updated to 0.9.3", "downloading 0.9.3: 40%", "failed: …")
   repo?: string; // fw 0.9.2: GitHub repo whose releases the logger installs (absent: remote update off)
   otachk?: string; // fw 0.9.6: the logger's own check of the GitHub download path after boot ("GitHub ok, latest 0.9.7")
+  chipC?: number; // fw 1.0.0: the ESP32's own temperature, °C
+  // fw 1.0.0 alert delivery since the logger's last restart, only for channels that are set up. Errors are short
+  // English codes ("TLS -0x7F00 out of memory", "HTTP 401"); *At = epoch of that failure.
+  tgOk?: number;
+  tgFail?: number;
+  tgErr?: string;
+  tgErrAt?: number;
+  mailOk?: number;
+  mailFail?: number;
+  mailErr?: string;
+  mailErAt?: number;
 }
 
 /** /devices/inv1/meta — flat, boot and on change. */

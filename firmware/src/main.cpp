@@ -130,7 +130,10 @@ void loop() {
   localWeb.loop();
   console::loop();
   safemode::loop(now);
-  if (rota::inProbation()) rota::probationLoop(app.uplinkStatus().lastCloudOkEpoch != 0);
+  if (rota::inProbation()) {  // 1.0.0: also proves cfg (and GitHub after a remote update), whatever the clock
+    UplinkStatus u = app.uplinkStatus();
+    rota::probationLoop(u.cloudOkBoot, u.cfgOkBoot);
+  }
 
   // BOOT (GPIO0) held 3 s while running -> provisioning portal (10 min)
   if (digitalRead(cfg::PIN_BOOT) == LOW) {

@@ -17,6 +17,7 @@ struct SmtpConfig {
 struct SmtpResult {
   bool ok = false;
   int code = 0;      // last SMTP reply code (0 = no reply)
+  int tls = 0;       // mbedTLS error code of a failed connect (1.0.0)
   char err[64] = "";
 };
 

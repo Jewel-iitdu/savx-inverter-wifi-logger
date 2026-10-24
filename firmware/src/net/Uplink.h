@@ -19,6 +19,7 @@ struct UplinkStatus {
   bool enabled = false;          // Firebase credentials present and valid-looking
   bool authOk = false;
   uint32_t lastCloudOkEpoch = 0; // `cok`
+  bool cloudOkBoot = false, cfgOkBoot = false;  // 1.0.0: this boot wrote / read cfg, whatever the clock (probation)
   uint32_t handshakesToday = 0;  // `hs` (RTDB TLS sessions)
   uint32_t requestsToday = 0;    // `rq` (RTDB requests)
   bool quotaGuard = false;
@@ -38,6 +39,9 @@ struct UplinkStatus {
   uint32_t pushesOk = 0, pushesFail = 0;
   bool emailOn = false;          // SMTP configured in the portal (NVS "smtp")
   uint32_t mailsOk = 0, mailsFail = 0;
+  uint32_t tgOk = 0, tgFail = 0;               // 1.0.0: Telegram sends since boot (an alert to n chats counts once)
+  char tgErr[41] = "", mailErr[41] = "";       // 1.0.0: last failure (alertErrText), kept after later successes
+  uint32_t tgErrAt = 0, mailErrAt = 0;         // epoch of that failure
   int lastHcCode = 0;
 };
 

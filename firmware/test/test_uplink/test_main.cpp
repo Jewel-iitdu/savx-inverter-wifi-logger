@@ -725,6 +725,91 @@ void test_wifi_watchdog() {
   TEST_ASSERT_EQUAL(-1, restartAt);
 }
 
+// 1.0.0: 2026-10-24 20:47 a Telegram alert came late and every e-mail failed after 3 tries in 3 min. Network, TLS and
+// server errors now retry for about 6 h; a refusal (wrong token, chat or password) still stops after 3 tries.
+void test_alert_retry_policy() {
+  uint32_t total = 0;
+  int tries = 0;
+  for (uint8_t f = 1; f < 30; f++) {
+    uint32_t w = alertRetryMs(f, false);
+    if (!w) break;
+    total += w;
+    tries = f;
+  }
+  TEST_ASSERT_EQUAL(12, tries);                          // 13 attempts in all
+  TEST_ASSERT_EQUAL_UINT32(20010000u, total);            // 5 h 34 min
+  TEST_ASSERT_EQUAL_UINT32(30000u, alertRetryMs(1, false));
+  TEST_ASSERT_TRUE(alertRetryMs(3, false) > 0);          // where 0.9.9 gave up
+  TEST_ASSERT_EQUAL_UINT32(0, alertRetryMs(3, true));    // refused: 3 tries
+  TEST_ASSERT_EQUAL_UINT32(60000u, alertRetryMs(2, true));
+  TEST_ASSERT_EQUAL_UINT32(0, alertRetryMs(0, false));
+  // what counts as refused
+  TEST_ASSERT_TRUE(alertRefused(401, false));   // Telegram: bad token
+  TEST_ASSERT_TRUE(alertRefused(400, false));   // chat not found
+  TEST_ASSERT_FALSE(alertRefused(429, false));  // too many requests: retry
+  TEST_ASSERT_FALSE(alertRefused(502, false));
+  TEST_ASSERT_FALSE(alertRefused(-1, false));   // connect/TLS
+  TEST_ASSERT_TRUE(alertRefused(535, true));    // SMTP: wrong password
+  TEST_ASSERT_FALSE(alertRefused(451, true));   // SMTP: try later
+  TEST_ASSERT_FALSE(alertRefused(0, true));     // SMTP: no reply / connect failed
+  // the error text for the cloud status (<= 40 chars)
+  char e[41];
+  alertErrText(-0x7F00, "connect api.telegram.org: SSL - Memory allocation failed", e, sizeof e);
+  TEST_ASSERT_EQUAL_STRING("TLS -0x7F00 out of memory", e);
+  alertErrText(-0x2700, "connect x: X509 - Certificate verification failed", e, sizeof e);
+  TEST_ASSERT_EQUAL_STRING("TLS -0x2700", e);
+  alertErrText(0, "HTTP 401", e, sizeof e);
+  TEST_ASSERT_EQUAL_STRING("HTTP 401", e);
+  alertErrText(0, "connect/TLS to mail.example-company.com:465 failed: SSL - Conn reset", e, sizeof e);
+  TEST_ASSERT_EQUAL(40, (int)strlen(e));
+}
+
+// 1.0.0 status fields: chip temperature, alert delivery. Every field at its longest still fits the uplink's 1 KB
+// buffer and the rules (key <= 8 chars, number or string <= 40).
+void test_status_json_worst_case() {
+  upj::StatusDoc s;
+  s.ts = 4000000000u;
+  s.fw = "10.10.10";
+  snprintf(s.ip, sizeof s.ip, "255.255.255.255");
+  s.rssi = -100;
+  s.heap = s.psram = s.up = 4000000000u;
+  s.rr = "BROWNOUT";
+  s.q = 4000000;
+  snprintf(s.proto, sizeof s.proto, "%s", "pi30-115200-xxxxxxxxxxx");
+  snprintf(s.dia, sizeof s.dia, "%s", "REVOXXXXX");
+  s.hs = s.rq = s.lok = s.cok = 4000000000u;
+  s.arv = 1792560000000.0;
+  s.mjq = s.nrul = 99;
+  s.edrop = 4000000000u;
+  s.qg = 2;
+  char* str[] = {s.ruleErr, s.meter, s.ota, s.repo, s.otachk, s.tgErr, s.mailErr};
+  for (char* p : str) {
+    memset(p, 'x', 40);
+    p[40] = 0;
+  }
+  s.chipC = -12.5f;
+  s.tgOn = s.mailOn = true;
+  s.tgOk = s.tgFail = s.mailOk = s.mailFail = s.tgErrAt = s.mailErAt = 4000000000u;
+  char b[1024];
+  size_t n = upj::statusJson(s, b, sizeof b);
+  TEST_ASSERT_TRUE_MESSAGE(n > 0, "status does not fit 1 KB");
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, b));
+  for (JsonPair kv : doc.as<JsonObject>()) {
+    TEST_ASSERT_TRUE_MESSAGE(strlen(kv.key().c_str()) <= 8, kv.key().c_str());
+    bool okv = kv.value().is<double>() || (kv.value().is<const char*>() && strlen(kv.value().as<const char*>()) <= 40);
+    TEST_ASSERT_TRUE_MESSAGE(okv, kv.key().c_str());
+  }
+  TEST_ASSERT_EQUAL_FLOAT(-12.5f, doc["chipC"].as<float>());
+  TEST_ASSERT_TRUE(doc["tgErr"].is<const char*>());
+  TEST_ASSERT_TRUE(doc["mailErAt"].is<double>());
+  // channels that are not set up send nothing
+  s.tgOn = s.mailOn = false;
+  upj::statusJson(s, b, sizeof b);
+  TEST_ASSERT_NULL(strstr(b, "tgOk"));
+  TEST_ASSERT_NULL(strstr(b, "mailFail"));
+}
+
 // 0.9.9: a safe mode after a crash loop ends by itself after 30 min; the manual flag does not
 void test_safe_mode_auto_exit() {
   TEST_ASSERT_FALSE(safeModeAutoExit(true, 29 * 60000u));
@@ -801,6 +886,19 @@ void test_telegram_bangla_and_pairing() {
   TEST_ASSERT_NOT_NULL(strstr(b, "ব্যাটারি কম — ঠিক হয়েছে"));
   TEST_ASSERT_TRUE(notifyfmt::tgWelcomeJson("42", true, b, sizeof b) > 0);
   TEST_ASSERT_NOT_NULL(strstr(b, "যুক্ত হয়েছে"));
+  // 1.0.0: the daily summary's body in Bangla too (2026-10-24 21:00 it came in English under the Bangla title)
+  AlertEvent sum = mkEvent("DAILY_SUMMARY", "info", 'i', 1);
+  sum.ts = T_1435;
+  snprintf(sum.msg, sizeof sum.msg, "Today: PV 6.9 kWh, load 12.9 kWh, grid 6.1 kWh (est.), battery in 1.3 / out 1.3 kWh");
+  TEST_ASSERT_TRUE(notifyfmt::telegramJson(sum, "42", T_1435, true, b, sizeof b) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(b, "আজকের সারাংশ"));
+  TEST_ASSERT_NOT_NULL(strstr(b, "সোলার: ৬.৯ kWh\\u000aলোড: ১২.৯ kWh\\u000aগ্রিড: ৬.১ kWh (আনুমানিক)\\u000aব্যাটারি চার্জ / খরচ: ১.৩ / ১.৩ kWh"));
+  TEST_ASSERT_NULL(strstr(b, "Today"));
+  TEST_ASSERT_TRUE(notifyfmt::telegramJson(sum, "42", T_1435, false, b, sizeof b) > 0);  // English chats unchanged
+  TEST_ASSERT_NOT_NULL(strstr(b, "Today: PV 6.9 kWh"));
+  snprintf(sum.msg, sizeof sum.msg, "something else");  // unknown wording: kept as it is
+  TEST_ASSERT_TRUE(notifyfmt::telegramJson(sum, "42", T_1435, true, b, sizeof b) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(b, "something else"));
 
   char chats[5][24];
   long long maxId = 0;
@@ -843,6 +941,8 @@ int main(int, char**) {
   RUN_TEST(test_network_watchdog_long_silence);
   RUN_TEST(test_wifi_watchdog);
   RUN_TEST(test_safe_mode_auto_exit);
+  RUN_TEST(test_alert_retry_policy);
+  RUN_TEST(test_status_json_worst_case);
   RUN_TEST(test_ntfy_and_telegram_bodies);
   RUN_TEST(test_cfg_eq_sees_grid_off_and_meter);
   return UNITY_END();

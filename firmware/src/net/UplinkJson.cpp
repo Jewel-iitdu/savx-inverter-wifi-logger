@@ -176,6 +176,19 @@ size_t statusJson(const StatusDoc& s, char* out, size_t n) {
   if (s.ota[0]) j.s("ota", s.ota);
   if (s.repo[0]) j.s("repo", s.repo);
   if (s.otachk[0]) j.s("otachk", s.otachk);
+  j.num("chipC", s.chipC, 1);
+  if (s.tgOn) {
+    j.u("tgOk", s.tgOk);
+    j.u("tgFail", s.tgFail);
+    if (s.tgErr[0]) j.s("tgErr", s.tgErr);
+    if (s.tgErrAt) j.u("tgErrAt", s.tgErrAt);
+  }
+  if (s.mailOn) {
+    j.u("mailOk", s.mailOk);
+    j.u("mailFail", s.mailFail);
+    if (s.mailErr[0]) j.s("mailErr", s.mailErr);
+    if (s.mailErAt) j.u("mailErAt", s.mailErAt);
+  }
   j.close();
   return j.ok() ? j.len() : 0;
 }

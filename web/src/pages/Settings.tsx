@@ -8,10 +8,18 @@ import { fmtBytes, fmtNum, isNum } from '../lib/format';
 import { idbClear } from '../lib/idb';
 import { CFG_DEFAULTS, CFG_FIELDS, validateCfgValue, type Cfg, type Live, type Status } from '../data/types';
 import { Banner, Card, KV, Segmented, Switch, ToggleRow } from '../components/ui';
-import { FirmwareCard } from '../components/FirmwareCard';
+import { FirmwareCard, versionCode } from '../components/FirmwareCard';
 import { outputIsVA } from '../lib/decode';
 import { PF_DEFAULT, PF_MAX, PF_MIN, parsePf, usePowerPrefs } from '../lib/power';
 import { localizeDigits as dg, t, tj } from '../lib/i18n';
+
+/** Settings > Logger rows for one alert channel (fw 1.0.0): sends since restart, and the last failure with its time. */
+function alertRows(label: string, errLabel: string, ok?: number, fail?: number, err?: string, at?: number): Array<[string, string]> {
+  if (!isNum(ok)) return [];
+  const rows: Array<[string, string]> = [[label, t('set.sentFailed', { ok: fmtNum(ok), fail: fmtNum(fail ?? 0) })]];
+  if (err) rows.push([errLabel, isNum(at) ? `${err} · ${fmtDateTime(at)}` : err]);
+  return rows;
+}
 
 export function SettingsPage() {
   const { source, visible, meta, user, themePref, setThemePref, lang, setLang } = useApp();
@@ -209,6 +217,19 @@ export function SettingsPage() {
           >
             {t('set.reprobe')}
           </button>
+          {versionCode(s?.fw) >= 10000 && (
+            // fw 1.0.0: an update request for the running version restarts the logger (no new rule line)
+            <button
+              type="button"
+              class="btn btn-ghost"
+              disabled={saving}
+              onClick={() => {
+                if (confirm(t('set.restartConfirm'))) void write({ ota: versionCode(s!.fw), otaAt: Date.now() }, t('set.restartOk'));
+              }}
+            >
+              {t('set.restart')}
+            </button>
+          )}
         </div>
         <p class="muted small">
           {pending('testAlert') ? t('set.testPending') : ''}
@@ -248,6 +269,10 @@ export function SettingsPage() {
             [t('set.inverterReply'), isNum(s?.lok) ? fmtAgo(now - s!.lok!) : '–'],
             [t('set.cloudOk'), isNum(s?.cok) ? fmtAgo(now - s!.cok!) : '–'],
             [t('set.requests'), `${fmtNum(s?.rq)} / ${fmtNum(s?.hs)}`],
+            // fw 1.0.0: chip temperature and alert delivery (rows only when the logger sends them)
+            ...(isNum(s?.chipC) ? [[t('set.chipTemp'), fmtNum(s!.chipC, 0, '°C')] as [string, string]] : []),
+            ...alertRows(t('set.alertTg'), t('set.tgErr'), s?.tgOk, s?.tgFail, s?.tgErr, s?.tgErrAt),
+            ...alertRows(t('set.alertMail'), t('set.mailErr'), s?.mailOk, s?.mailFail, s?.mailErr, s?.mailErAt),
           ]}
         />
       </Card>

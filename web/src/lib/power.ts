@@ -1,9 +1,9 @@
 // Power display for inverters that send their AC output power as VA only (outputIsVA: the Sorotec REVO, 2026-10-22).
 // The owner picks the unit in Settings (stored per browser, like the theme):
 //  - 'W'  (default): output power estimated as VA × power factor. With the grid meter on, the load is MEASURED instead
-//          (see "Measured load" below) and the power factor is only the fallback. It depends on the mode and the load:
-//          0.48 on grid at night (198 W at the meter / 412 VA, 2026-10-24 01:40), about 1.0 on battery in the day
-//          (7,674 Wh solar + battery vs 7,459 VAh, grid cut 2026-10-23). Default 0.90 fits the daytime cut.
+//          (see "Measured load" below) and the power factor is only the fallback. On battery it is about 0.95-1.0:
+//          7,674 Wh solar + battery vs 7,459 VAh (grid cut 2026-10-23); 1,160 W from the battery for 1,080 VA (night,
+//          2026-10-24). The "0.48 at night" once taken from the grid meter was that meter reading low. Default 0.90.
 //  - 'VA': load and grid as reported. Solar and battery are DC and always shown in W (the LCD shows PV in kW too).
 // Only the AC output side is scaled: load power, the load part of grid power (fw 0.7.5+: grid = load + battery - PV,
 // and only the load term is VA), and the load/grid energies. Solar and battery are never scaled.
@@ -23,7 +23,7 @@ import type { Daily, HistRec, Live } from '../data/types';
 
 export type PowerUnit = 'W' | 'VA';
 export const PF_DEFAULT = 0.9;
-export const PF_MIN = 0.3; // the meter showed 0.48 for the night loads (2026-10-24)
+export const PF_MIN = 0.3;
 export const PF_MAX = 1;
 
 export interface PowerView {
@@ -68,8 +68,8 @@ export function useBillView(): PowerView {
 /** The grid power in viewLive(l, p) is the meter's real W (show it in W, whatever the power unit). */
 export const gridPowerMetered = (l: Live | null | undefined, p: PowerView): boolean => p.meter && isNum(l?.mw);
 /** Line mode with the meter: viewLive's load is grid (meter) + solar - battery charging, in real W, not VA x pf.
- *  The inverter's VA read about 2x the real load at night (414 VA vs 200 W at the meter, 2026-10-24 01:40) and 8x
- *  the next evening (1,027 VA vs 126 W, power factor 0.37 at the meter, 2026-10-24 20:30). */
+ *  Only as good as the meter: the owner's breaker turned out to read ~5x too low (126 W at the meter for ~1 kW, battery
+ *  test 2026-10-24 20:46, also in its own kWh), so the inverter's VA was right and cfg.meter is off there. */
 export const loadPowerMetered = (l: Live | null | undefined, p: PowerView): boolean =>
   p.meter && isNum(l?.mw) && l?.md === 'L';
 // The battery's small discharge in line mode is the inverter's own standby draw, not load: only charging is taken off.
@@ -94,8 +94,8 @@ export function measuredEld(v: { egm?: number; epv?: number; edis?: number; ech?
 
 /** A meter reading at most this old (live `mage`, s) shares its payload with an inverter VA within ~2 s of it. */
 export const METER_FRESH_AGE = 3;
-// 0.2 until 2026-10-24: the real ratio was 0.12 that evening, so between readings the app showed VA x 0.2 = 205 W for
-// a 126 W load (and 126 W again at each reading)
+// 0.2 until 2026-10-24: the meter/VA ratio was 0.12 that evening, so between readings the app showed VA x 0.2 = 205 W
+// and the meter's 126 W at each reading (that meter was wrong itself, see loadPowerMetered)
 export const METER_K_MIN = 0.05;
 export const METER_K_MAX = 1;
 /** A learned k is used for this long (s of live `ts`) after its reading: after a pause (app hidden, grid off) the

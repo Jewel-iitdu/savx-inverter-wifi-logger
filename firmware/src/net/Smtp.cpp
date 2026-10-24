@@ -119,7 +119,9 @@ SmtpResult smtpSend(const SmtpConfig& cfg, const char* rootsPem, const char* fro
   c.setTimeout(REPLY_MS);
   feedWdt();
   if (!c.connect(cfg.host.c_str(), cfg.port, (int32_t)CONNECT_MS)) {
-    snprintf(r.err, sizeof r.err, "connect/TLS to %s:%u failed", cfg.host.c_str(), cfg.port);
+    char e[48] = "";
+    r.tls = c.lastError(e, sizeof e);
+    snprintf(r.err, sizeof r.err, "connect/TLS to %s:%u failed%s%s", cfg.host.c_str(), cfg.port, e[0] ? ": " : "", e);
     return r;
   }
   feedWdt();

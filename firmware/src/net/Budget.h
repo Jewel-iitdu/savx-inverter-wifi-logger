@@ -12,6 +12,7 @@
 //       0.9.9: 6 h without any cloud success -> reboot even without a working connect (a wedged IP stack or DNS never
 //       connects), still at most once per 6 h; Wi-Fi watchdog; a crash-loop safe mode ends after 30 min.
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 
 #include "config.h"
@@ -91,6 +92,18 @@ class WifiWatchdog {
 
 // a safe mode entered after crash-type resets (not the manual flag) ends by itself: nobody may be home to end it
 inline bool safeModeAutoExit(bool crashSafe, uint32_t upMs) { return crashSafe && upMs >= cfg::SAFE_MODE_EXIT_MS; }
+
+// Alert delivery retries (0.9.10). Before, Telegram and e-mail gave up after 3 tries within 1.5 / 3 min, so an alert
+// raised during a short glitch was lost (2026-10-24 20:47: "grid restored" came late, every e-mail failed). Now a
+// network/TLS/server error retries for about 6 h (30 s, 1, 2, 5, 10, 15, 30, 30, 60, 60, 60, 60 min); a refusal that a
+// retry cannot fix (HTTP 4xx except 408/429: wrong token or chat; SMTP 5xx: wrong password, recipient refused) stops
+// after 3 tries. The message carries its own time, so a late one still reads right.
+bool alertRefused(int code, bool smtp);
+// delay before the next try after `failed` failed tries (1 = the first failure); 0 = give up
+uint32_t alertRetryMs(uint8_t failed, bool refused);
+// short error for the cloud status (<= 40 chars, the rules' limit): "TLS -0x7F00 out of memory", "TLS -0x2700" or the
+// sender's own text ("HTTP 401", "AUTH password 535")
+void alertErrText(int tls, const char* err, char* out, size_t n);
 
 // true for an mbedTLS error code (as NetworkClientSecure::lastError returns it) that means "out of memory", also
 // inside a composite code (high-level module error + low-level error)

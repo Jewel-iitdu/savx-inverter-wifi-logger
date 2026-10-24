@@ -1,6 +1,7 @@
 // UplinkJson.h - RTDB paths, keys and JSON bodies of the cloud uplink (d1 §4.1-4.2, §4.8 + r8 §3). Host-portable.
 // Everything that decides WHAT is written where lives here so the native tests pin the data contract.
 #pragma once
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -61,6 +62,11 @@ struct StatusDoc {
   char ota[41] = "";      // 0.9.2 remote update state, e.g. "updated to 0.9.3" ("" omitted)
   char repo[41] = "";     // 0.9.2 releases repo for remote updates ("" omitted: off)
   char otachk[41] = "";   // 0.9.6 boot check of the GitHub download path ("GitHub ok, latest 0.9.7")
+  float chipC = NAN;      // 1.0.0 ESP32 chip temperature, °C
+  bool tgOn = false, mailOn = false;                     // 1.0.0 alert delivery, only for channels that are set up:
+  uint32_t tgOk = 0, tgFail = 0, mailOk = 0, mailFail = 0;  //   sends since boot
+  char tgErr[41] = "", mailErr[41] = "";                 //   last failure ("" omitted)
+  uint32_t tgErrAt = 0, mailErAt = 0;                    //   and its time (0 omitted)
 };
 size_t statusJson(const StatusDoc& s, char* out, size_t n);
 
