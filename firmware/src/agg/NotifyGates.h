@@ -14,6 +14,7 @@ class IGateStore {
   virtual ~IGateStore() {}
   virtual void saveJobs(int32_t day, uint16_t cnt) = 0;
   virtual void saveOutage(uint32_t openEpoch) { (void)openEpoch; }  // 0.7.9: open grid outage (0 = none)
+  virtual void saveSummaryDay(int32_t day) { (void)day; }          // 1.0.1: local day of the last DAILY_SUMMARY
 };
 
 class NotifyGates {

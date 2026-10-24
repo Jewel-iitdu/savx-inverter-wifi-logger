@@ -75,6 +75,14 @@ export function SettingsPage() {
   const s = status.value ?? null;
   const live = s?.ts ? now - s.ts : Infinity;
   const pending = (k: 'testAlert' | 'reprobe') => cfg[k] > 0 && nowSec() - cfg[k] < 90;
+  // fw 1.0.0 remote restart = an update request for the running version (cfg.ota/otaAt, ms). Pending until the
+  // logger reports a boot after the request (status ts - up), at most 2 min; then "restarted … ago" for 10 min.
+  const rq = cfgSub.value;
+  const restartAt = rq?.ota && rq.ota === versionCode(s?.fw) ? (rq.otaAt ?? 0) : 0;
+  const bootAt = isNum(s?.ts) && isNum(s?.up) ? s!.ts! - s!.up! : 0;
+  const restarted = restartAt > 0 && bootAt * 1000 > restartAt;
+  const restartPending = restartAt > 0 && !restarted && Date.now() - restartAt < 120000;
+  const restartDone = restarted && Date.now() - restartAt < 600000;
 
   return (
     <div class="page">
@@ -222,7 +230,7 @@ export function SettingsPage() {
             <button
               type="button"
               class="btn btn-ghost"
-              disabled={saving}
+              disabled={saving || restartPending}
               onClick={() => {
                 if (confirm(t('set.restartConfirm'))) void write({ ota: versionCode(s!.fw), otaAt: Date.now() }, t('set.restartOk'));
               }}
@@ -234,6 +242,8 @@ export function SettingsPage() {
         <p class="muted small">
           {pending('testAlert') ? t('set.testPending') : ''}
           {pending('reprobe') ? t('set.reprobePending') : ''}
+          {restartPending ? t('set.restartPending') : ''}
+          {restartDone ? t('set.restarted', { ago: fmtAgo(now - bootAt) }) : ''}
           {tj('set.actionsNote', { link: <a href="#/alerts/email">{t('set.alertsEmailLink')}</a> })}
         </p>
         <p class="small">

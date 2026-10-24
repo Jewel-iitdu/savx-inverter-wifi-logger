@@ -100,7 +100,6 @@ void AlertEngine::rollDay(uint32_t epoch) {
   if (d == day_) return;
   day_ = d;
   pvLowSentToday_ = false;
-  summarySentToday_ = false;
 }
 
 void AlertEngine::emit(const char* type, uint8_t sev, const char* st, const char* msg, uint32_t dur, uint32_t nowMs,
@@ -386,9 +385,10 @@ void AlertEngine::tick(uint32_t nowMs, uint32_t epoch, bool linkExpected, bool l
          "No valid inverter reply for 60 s - check the COM cable/wiring (logger keeps retrying)",
          "Inverter link restored");
   // DAILY_SUMMARY
-  if (today && cfg_.summaryHour >= 0 && tu::epochValid(epoch) && !summarySentToday_ &&
+  if (today && cfg_.summaryHour >= 0 && tu::epochValid(epoch) && summaryDay_ != tu::localDayNumber(epoch) &&
       (int)tu::localHour(epoch) == cfg_.summaryHour) {
-    summarySentToday_ = true;
+    summaryDay_ = tu::localDayNumber(epoch);
+    if (IGateStore* st = gates_->store()) st->saveSummaryDay(summaryDay_);
     char msg[200];
     snprintf(msg, sizeof msg, "Today: PV %.1f kWh, load %.1f kWh, grid %.1f kWh (est.), battery in %.1f / out %.1f kWh",
              today->epv / 1000.0, today->eld / 1000.0, today->egr / 1000.0, today->ech / 1000.0, today->edis / 1000.0);

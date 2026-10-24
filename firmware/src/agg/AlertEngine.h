@@ -100,6 +100,9 @@ class AlertEngine {
   void setEmailPolicy(const rules::EmailPolicy& p) { policy_ = p; }
   // 0.7.9: an outage that was open (and notified) before a reboot: resume it silently instead of a second GRID_LOSS
   void resumeOutage(uint32_t openEpoch) { resumeEpoch_ = openEpoch; }
+  // 1.0.1: the day of the last DAILY_SUMMARY (saved by IGateStore::saveSummaryDay). Before, a restart in the summary
+  // hour sent it again (2026-10-24: at 21:00, after the update at 21:28 and the restart at 21:32).
+  void resumeSummaryDay(int32_t day) { summaryDay_ = day; }
   bool plannedGridOff(uint32_t epoch) const;    // inside the owner's planned grid-off window (+- grace)
   bool nearPlannedStart(uint32_t epoch) const;  // within +- grace of the window start (the scheduled cut)
   const rules::EmailPolicy& emailPolicy() const { return policy_; }
@@ -144,7 +147,7 @@ class AlertEngine {
   // PV_LOW_DAY
   uint32_t pvLowSinceMs_ = 0;
   bool pvLowTracking_ = false, pvLowSentToday_ = false;
-  bool summarySentToday_ = false;
+  int32_t summaryDay_ = -1;  // local day number of the last DAILY_SUMMARY
   uint32_t lastValidMs_ = 0;
   bool hadValid_ = false;
 };

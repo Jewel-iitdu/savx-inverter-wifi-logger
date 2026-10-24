@@ -376,6 +376,7 @@ class NvsGateStore : public IGateStore {
     settings.putBlob("rules", "mj", &b, sizeof b);
   }
   void saveOutage(uint32_t openEpoch) override { settings.putBlob("alert", "outage", &openEpoch, sizeof openEpoch); }
+  void saveSummaryDay(int32_t day) override { settings.putBlob("alert", "sumDay", &day, sizeof day); }
 };
 
 static Aggregator agg;
@@ -475,6 +476,8 @@ static void aggTask(void*) {
     gates.setStore(&gateStore);
     uint32_t outage = 0;  // 0.7.9: a grid outage already notified before this boot -> no second GRID_LOSS
     if (settings.getBlob("alert", "outage", &outage, sizeof outage) && outage) alerts.resumeOutage(outage);
+    int32_t sumDay = -1;  // 1.0.1: no second DAILY_SUMMARY after a restart in the summary hour
+    if (settings.getBlob("alert", "sumDay", &sumDay, sizeof sumDay)) alerts.resumeSummaryDay(sumDay);
     MtdBlob mb;
     if (settings.getBlob("energy", "mtd", &mb, sizeof mb) && mb.ver == 2) mtd.load(mb);
     loadBootRules(timeSync.epochOrZero());

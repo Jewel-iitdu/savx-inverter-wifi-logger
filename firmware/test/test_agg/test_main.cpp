@@ -766,6 +766,36 @@ void test_alert_link_lost_and_summary() {
   TEST_ASSERT_EQUAL(0, countType(q, "DAILY_SUMMARY"));  // once per day
 }
 
+// 1.0.1: 2026-10-24 the summary came at 21:00, again after the update at 21:28 and after the restart at 21:32: the
+// "sent today" flag lived in RAM only. Now its day is saved and resumed at boot.
+struct SumStore : IGateStore {
+  int32_t day = -1;
+  void saveJobs(int32_t, uint16_t) override {}
+  void saveSummaryDay(int32_t d) override { day = d; }
+};
+void test_summary_once_across_restarts() {
+  mrec::Daily d;
+  d.epv = 6900;
+  SumStore store;
+  AlertQueue q;
+  NotifyGates g;
+  g.setStore(&store);
+  AlertEngine eng(q, &g);
+  eng.tick(1000, T_2100, true, true, &d);
+  TEST_ASSERT_EQUAL(1, countType(q, "DAILY_SUMMARY"));
+  TEST_ASSERT_TRUE(store.day > 0);
+  // a restart at 21:28: a new engine, the saved day resumed
+  AlertQueue q2;
+  NotifyGates g2;
+  AlertEngine boot(q2, &g2);
+  boot.resumeSummaryDay(store.day);
+  boot.tick(2000, T_2100 + 28 * 60, true, true, &d);
+  TEST_ASSERT_EQUAL(0, countType(q2, "DAILY_SUMMARY"));
+  // the next day at 21:00 it comes again
+  boot.tick(3000, T_2100 + 86400, true, true, &d);
+  TEST_ASSERT_EQUAL(1, countType(q2, "DAILY_SUMMARY"));
+}
+
 void test_alert_queue_drop_policy() {
   AlertQueue q;
   AlertEvent e;
@@ -921,6 +951,7 @@ int main(int, char**) {
   RUN_TEST(test_alert_batt_low_hysteresis_and_quiet_hours);
   RUN_TEST(test_alert_daily_push_cap);
   RUN_TEST(test_alert_link_lost_and_summary);
+  RUN_TEST(test_summary_once_across_restarts);
   RUN_TEST(test_alert_queue_drop_policy);
   RUN_TEST(test_gw_and_nogrid_share_the_grid_predicate);
   RUN_TEST(test_builtin_email_flags);
