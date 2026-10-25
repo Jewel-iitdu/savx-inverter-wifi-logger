@@ -36,6 +36,7 @@ class FirebaseRest {
   // wrong credentials: sign-in paused for 30 min, waiting for the owner (not a network fault)
   bool credentialsHeld(uint32_t nowMs) const { return holdUntilMs_ && (int32_t)(nowMs - holdUntilMs_) < 0; }
   bool outOfMemory() const { return tlsOutOfMemory(lastTls_); }  // the last failed connect ran out of TLS heap
+  uint32_t authTries() const { return authTries_; }  // 1.0.2: sign-in / refresh attempts (not back-off returns)
   void forceReauth() { haveToken_ = false; }
   void drop() { db_.stop(); }
 
@@ -61,6 +62,7 @@ class FirebaseRest {
   char uid_[64] = "";
   bool configured_ = false, haveToken_ = false;
   uint32_t expiryMs_ = 0, holdUntilMs_ = 0;
+  uint32_t authTries_ = 0;
   int lastTls_ = 0;
   Backoff authBackoff_;
   SaveTokenFn save_ = nullptr;

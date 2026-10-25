@@ -1083,6 +1083,10 @@ export const EVENT_TYPES: Record<string, { sev: number; label: string; clears?: 
     "sev": 2,
     "label": "Logger rebooted"
   },
+  "LOGGER_OFFLINE": {
+    "sev": 1,
+    "label": "Logger was offline"
+  },
   "QUOTA_GUARD": {
     "sev": 2,
     "label": "Quota guard active"

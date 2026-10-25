@@ -3,7 +3,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "1.0.1"
+#define FW_VERSION "1.0.2"
 #define FW_NAME "savx-logger"
 
 // ---------------------------------------------------------------------------------------------

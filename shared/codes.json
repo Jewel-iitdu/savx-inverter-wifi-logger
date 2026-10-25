@@ -333,6 +333,7 @@
       { "type": "PV_LOW_DAY", "sev": 2, "label": "Low solar today" },
       { "type": "LINK_LOST", "sev": 3, "label": "Inverter link lost" },
       { "type": "LOGGER_REBOOT", "sev": 2, "label": "Logger rebooted" },
+      { "type": "LOGGER_OFFLINE", "sev": 1, "label": "Logger was offline" },
       { "type": "QUOTA_GUARD", "sev": 2, "label": "Quota guard active" },
       { "type": "DATA_DROPPED", "sev": 2, "label": "Data dropped" },
       { "type": "BACKLOG_STUCK", "sev": 2, "label": "Upload backlog stuck" },

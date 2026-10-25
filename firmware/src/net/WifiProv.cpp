@@ -36,6 +36,9 @@ static String defaults[sizeof(PROV_PARAMS) / sizeof(PROV_PARAMS[0])];
 
 bool WifiProv::wifiUp() const { return WiFi.status() == WL_CONNECTED; }
 
+static volatile uint8_t s_discReason = 0;  // written by the Wi-Fi event task, read by the uplink
+uint8_t WifiProv::lastDisconnectReason() const { return s_discReason; }
+
 void WifiProv::saveParams() {
   for (size_t i = 0; i < PROV_PARAMS_N; i++) {
     const ProvParamDef& d = PROV_PARAMS[i];
@@ -63,6 +66,8 @@ void WifiProv::begin(const String& apName, const String& apPass, Hook onPortalSt
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(MDNS_HOST);
   WiFi.setAutoReconnect(true);
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) { s_discReason = info.wifi_sta_disconnected.reason; },
+               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
   wm.setTitle("Savx logger");

@@ -27,6 +27,7 @@
 #include "store/Settings.h"
 #include "sys/SafeMode.h"
 #include "sys/StatusLed.h"
+#include "sys/Crumbs.h"
 #include "sys/Watchdog.h"
 #include "web/LocalWeb.h"
 
@@ -69,6 +70,7 @@ void setup() {
   app.begin();
   if (ESP.getPsramSize()) jsonalloc::set(&psramJson);
   snprintf(app.resetReason, sizeof app.resetReason, "%s", watchdog::resetReasonName());
+  crumbs::bootSnapshot();  // 1.0.2: what the previous boot was doing (outage log), before any task marks
   settings.begin();
   {
     // ...and once the self-ID is known, drive the DI pin HIGH right away (invTask re-applies it later).
@@ -83,6 +85,7 @@ void setup() {
   if (safe) xEventGroupSetBits(app.events, EV_SAFE_MODE);
   Serial.printf("boot #%u reset=%s bootFails=%u%s\n", app.bootId, app.resetReason, safemode::bootFails(),
                 safe ? "  ** SAFE MODE: no inverter TX, no cloud **" : "");
+  if (crumbs::prevText()[0]) Serial.printf("previous boot: %s\n", crumbs::prevText());
 
   watchdog::begin(cfg::WDT_TIMEOUT_S);
   esp_task_wdt_add(nullptr);  // loopTask
@@ -125,6 +128,7 @@ void setup() {
 
 void loop() {
   esp_task_wdt_reset();
+  crumbs::mark(outage::T_LOOP);
   uint32_t now = millis();
   wifiProv.loop();
   localWeb.loop();

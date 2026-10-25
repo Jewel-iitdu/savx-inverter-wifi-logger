@@ -360,6 +360,11 @@ function cycleBefore(date: string, alerts: AlertsDoc) {
 const mailDelay = (ts: number) => 300 - (ts % 300) + 37 + (ts % 7);
 
 /** events/<date> with deterministic keys `<ts>-<rid|TYPE>-<o|c|r|i>` and e-mail status (r8 §3.6). */
+const DEMO_OUTAGES = [
+  { minute: 192, dur: 23 * 60, msg: 'Offline 23 min from 03:12. Wi-Fi down 21 min, 1 drop, NO_AP_FOUND, -71 dBm. Heap min 61/31 KB' },
+  { minute: 820, dur: 25, msg: 'Offline 25 s from 13:40. Reboot TASK_WDT (up 9h31m; uplink in mail 31s). Wi-Fi ok, -64 dBm' },
+];
+
 function eventsFor(date: string, acks: Set<string>, alerts: AlertsDoc): Record<string, EventRec> {
   const avail = availableMinutes(date);
   const out: Record<string, EventRec> = {};
@@ -389,6 +394,12 @@ function eventsFor(date: string, acks: Set<string>, alerts: AlertsDoc): Record<s
   for (const e of replay.events) {
     const { minute: _m, kind, src, ...rec } = e;
     put(rec, src, kind);
+  }
+  // fw 1.0.2 outage log (Settings > Logger log)
+  for (const o of DEMO_OUTAGES) {
+    if (o.minute >= avail) continue;
+    const ts = keyToEpoch(date, `${String(Math.floor(o.minute / 60)).padStart(2, '0')}${String(o.minute % 60).padStart(2, '0')}`);
+    put({ ts, type: 'LOGGER_OFFLINE', sev: 1, st: 'info', msg: o.msg, ch: 'log', dur: o.dur }, 'LOGGER_OFFLINE', 'i');
   }
   return out;
 }

@@ -46,7 +46,7 @@ var EVENT_LABELS = {
   BATT_HIGH: 'Battery voltage high', GRID_LOSS: 'Grid lost', GRID_RESTORED: 'Grid restored',
   GRID_ABNORMAL: 'Grid voltage abnormal', OVERLOAD: 'Overload', OVER_TEMP: 'Over temperature',
   PV_OVERVOLT: 'PV over-voltage', PV_LOW_DAY: 'Low solar today', LINK_LOST: 'Inverter link lost',
-  LOGGER_REBOOT: 'Logger rebooted', QUOTA_GUARD: 'Quota guard active', DATA_DROPPED: 'Data dropped',
+  LOGGER_REBOOT: 'Logger rebooted', LOGGER_OFFLINE: 'Logger was offline', QUOTA_GUARD: 'Quota guard active', DATA_DROPPED: 'Data dropped',
   BACKLOG_STUCK: 'Upload backlog stuck', DAILY_SUMMARY: 'Daily summary', TEST_ALERT: 'Test alert',
   RULE: 'Rule alert', RULE_INVALID: 'Rule ignored by the logger'          // new in r8 section 3.6
 };

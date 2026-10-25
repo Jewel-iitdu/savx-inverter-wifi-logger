@@ -16,6 +16,7 @@
 #include "net/Uplink.h"
 #include "store/MinuteQueue.h"
 #include "store/Settings.h"
+#include "sys/Crumbs.h"
 
 static QueueHandle_t qSample = nullptr;
 
@@ -303,6 +304,7 @@ static void invTask(void*) {
   uint32_t lastProbeStart = 0, lastPublish = 0;
   for (;;) {
     esp_task_wdt_reset();
+    crumbs::mark(outage::T_INV);
     DiagRequest rq;
     while (app.takeDiag(rq)) handleDiag(rq);
     uint32_t now = millis();
@@ -514,6 +516,7 @@ static void aggTask(void*) {
   uint32_t lastTick = 0, lastCheckpoint = millis(), lastHouse = 0;
   for (;;) {
     esp_task_wdt_reset();
+    crumbs::mark(outage::T_AGG);
     Sample s;
     uint32_t epoch = timeSync.epochOrZero();
     if (xQueueReceive(qSample, &s, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -682,6 +685,7 @@ static void uplinkTask(void*) {
   esp_task_wdt_add(nullptr);
   for (;;) {
     esp_task_wdt_reset();
+    crumbs::mark(outage::T_UPLINK);
     uplink::loop();
     app.setUplinkStatus(uplink::status());
     vTaskDelay(pdMS_TO_TICKS(1000));

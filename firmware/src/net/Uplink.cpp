@@ -2,6 +2,7 @@
 #include "net/Uplink.h"
 
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
 
 #include "agg/RuleParse.h"
@@ -17,12 +18,16 @@
 #include "net/FirebaseRest.h"
 #include "net/MailNudge.h"
 #include "net/OtaPlan.h"
+#include "net/OutageLog.h"
 #include "net/RemoteOta.h"
 #include "net/Notify.h"
 #include "net/TimeSync.h"
 #include "net/UplinkJson.h"
+#include "net/WifiProv.h"
 #include "store/MinuteQueue.h"
 #include "store/Settings.h"
+#include "sys/Crumbs.h"
+#include "sys/Watchdog.h"
 
 namespace uplink {
 namespace {
@@ -89,6 +94,27 @@ int32_t* pruneDays_ = nullptr;
 int pruneN_ = 0, pruneI_ = 0;
 bool wasOffline_ = true;
 uint32_t lastNetwdRestart_ = 0;  // NVS sys/nwdEp (epoch of the last network-watchdog reboot)
+outage::OutageLog outlog_(crumbs::rec());  // 1.0.2: why the logger was offline (record in RTC memory)
+AlertEvent outEv_;                         // a finished outage waiting for a free slot in pend_
+bool haveOutEv_ = false;
+
+// 1.0.2: a finished outage becomes a log-only LOGGER_OFFLINE event (events/<date>, no push, no e-mail)
+void queueOutage(const outage::Report& rep) {
+  outage::toEvent(rep, timeSync.epochOrZero(), millis(), outEv_);  // ts 0: fixTimestamps() sets it from upMs
+  haveOutEv_ = true;
+  Serial.printf("[outage] %s\n", rep.msg);
+}
+
+// the uplink's current step for the crumbs (what a crash interrupted) and the slowest step of an outage
+template <class F>
+bool timed(uint8_t s, F f) {
+  crumbs::step(s);
+  uint32_t t0 = millis();
+  bool r = f();
+  outlog_.onStep(s, millis() - t0);
+  crumbs::step(outage::S_IDLE);
+  return r;
+}
 
 void saveToken(const char* rt, const char* uid) {
   settings.setStr("cloud", "rtok", String(rt ? rt : ""));
@@ -141,9 +167,12 @@ bool ok(const FirebaseRest::Res& r, const char* what) {
     st_.cloudOkBoot = true;
     uint32_t ep = timeSync.epochOrZero();
     if (ep) st_.lastCloudOkEpoch = ep;
+    static outage::Report rep;  // uplink task only; off the stack (ok() runs deep inside doMinute)
+    if (outlog_.onCloudOk(now, ep, rep)) queueOutage(rep);
     return true;
   }
   snprintf(st_.lastError, sizeof st_.lastError, "%s: %s", what, fb.lastError());
+  outlog_.onFail(st_.lastError, r.kind == FirebaseRest::Kind::NET && fb.outOfMemory());
   if (r.kind == FirebaseRest::Kind::NET && fb.outOfMemory()) netwd.onOutOfMemory(now);
   if (r.kind != FirebaseRest::Kind::NOAUTH) dbBackoff.fail(now);
   Serial.printf("[up] %s failed (%s); retry in %lus\n", what, fb.lastError(), (unsigned long)(dbBackoff.lastDelayMs() / 1000));
@@ -161,6 +190,14 @@ int liveSec() { return haveCloudCfg_ ? cloudCfg_.liveSec : 10; }
 
 // ------------------------------------------------------------------------------------------- events
 void pullAlerts() {
+  if (haveOutEv_ && npend_ < cfg::ALERT_QUEUE_DEPTH) {
+    Pend& p = pend_[npend_++];
+    p = Pend();
+    p.e = outEv_;
+    p.rtdbDone = !fb.configured();
+    p.pushDone = p.tgDone = p.mailDone = true;  // log only
+    haveOutEv_ = false;
+  }
   AlertEvent e;
   while (npend_ < cfg::ALERT_QUEUE_DEPTH && alertQueue.pop(e)) {
     Pend& p = pend_[npend_++];
@@ -790,6 +827,8 @@ void begin() {
   double rev;
   if (settings.getBlob("rules", "rev", &rev, sizeof rev)) loadedRev_ = rev;
   settings.getBlob("sys", "nwdEp", &lastNetwdRestart_, sizeof lastNetwdRestart_);
+  outlog_.boot(millis(), app.resetReason, watchdog::lastResetWasCrash(), !strcmp(app.resetReason, "POWERON"),
+               settings.lastEpoch(), crumbs::prevText(), ota::versionCode(FW_VERSION));
   notifier = createNotifier();
   reloadCreds();
   metaDirty = true;
@@ -808,12 +847,20 @@ void loop() {
   int32_t today = ep ? tu::localDayNumber(ep) : 0;
   budget.roll(ep ? today : (int32_t)(now / 86400000UL) - 100000);
   bool wifi = WiFi.status() == WL_CONNECTED;
+  outlog_.onWifi(now, wifi, wifiProv.lastDisconnectReason(), wifi ? (int8_t)WiFi.RSSI() : 0);
+  static uint32_t tHeap = 0;  // every 10 s: the largest-block query walks the heap with it locked
+  if ((uint32_t)(now - tHeap) >= 10000) {
+    tHeap = now;
+    outlog_.onHeap(heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                   uxTaskGetStackHighWaterMark(nullptr));  // bytes on ESP-IDF
+  }
 
   NetWatchdog::Action a = netwd.step(now, wifi, fb.configured(), ep, lastNetwdRestart_);
   if (a == NetWatchdog::Action::DROP_TLS) {
     Serial.println(F("[up] network watchdog: no cloud success for 15 min - dropping TLS, re-auth"));
     fb.drop();
     fb.forceReauth();
+    outlog_.onTlsDrop();
   } else if (a == NetWatchdog::Action::RESTART) {
     Serial.println(F("[up] network watchdog: no cloud success for 60+ min - rebooting"));
     settings.putBlob("sys", "nwdEp", &ep, sizeof ep);
@@ -833,7 +880,7 @@ void loop() {
   }
   wasOffline_ = false;
   if (notifier) {
-    processPushes(now);
+    timed(outage::S_PUSH, [&] { processPushes(now); return true; });
     esp_task_wdt_reset();
     static uint32_t tTgPair = 0;  // Telegram auto-pairing: poll getUpdates every 15 s while pairing is open
     if (tgAddReq) {
@@ -844,14 +891,14 @@ void loop() {
     if (notifier->telegramPairing() && (uint32_t)(now - tTgPair) >= 15000) {
       tTgPair = now;
       ensureHeap();
-      if (notifier->pollTelegramPairing()) st_.telegramOn = notifier->telegramOn();
+      if (timed(outage::S_TG_PAIR, [&] { return notifier->pollTelegramPairing(); })) st_.telegramOn = notifier->telegramOn();
       esp_task_wdt_reset();
     }
     st_.tgChats = notifier->telegramChats();
     st_.tgPairing = notifier->telegramPairing();
-    processMail(millis());
+    timed(outage::S_MAIL, [&] { processMail(millis()); return true; });
     esp_task_wdt_reset();
-    doHealthcheck(millis());
+    timed(outage::S_HC, [&] { doHealthcheck(millis()); return true; });
   }
   esp_task_wdt_reset();
   if (!fb.configured()) {
@@ -866,10 +913,15 @@ void loop() {
     compactPend();
     return;
   }
-  if (!fb.ensureAuth(now)) {
+  if (!timed(outage::S_AUTH, [&] { return fb.ensureAuth(now); })) {
     st_.authOk = false;
     snprintf(st_.state, sizeof st_.state, "auth");
     snprintf(st_.lastError, sizeof st_.lastError, "%s", fb.lastError());
+    static uint32_t tries = 0;  // count real attempts only, not the back-off returns in between
+    if (fb.authTries() != tries) {
+      tries = fb.authTries();
+      outlog_.onFail(st_.lastError, fb.outOfMemory());
+    }
     netwd.onAuthFail(now, fb.credentialsHeld(now), fb.outOfMemory());  // wrong credentials: no watchdog reboots
     compactPend();
     return;
@@ -882,29 +934,32 @@ void loop() {
     if (did) ops++;
     esp_task_wdt_reset();
   };
-  step(doEvents(millis(), today));
+  using namespace outage;
+  step(timed(S_EVENTS, [&] { return doEvents(millis(), today); }));
   if (ep) {
-    if (ops < 3) step(doLive(millis(), ep));
-    if (ops < 3) step(doMinute(millis(), ep, today));
+    if (ops < 3) step(timed(S_LIVE, [&] { return doLive(millis(), ep); }));
+    if (ops < 3) step(timed(S_MINUTE, [&] { return doMinute(millis(), ep, today); }));
   }
-  if (ops < 3) step(doCfg(millis()));
-  if (ops < 3) step(doAlerts(millis()));
-  if (ops < 3) step(doMeta(millis()));
-  if (ops < 3) step(doFinished());
-  if (ops < 3) step(doMeterDay());
-  if (ops < 3) step(doMtd(millis()));
-  if (ops < 3) step(doDiag(millis()));
-  if (ops < 3) step(doPrune(millis(), ep, today));
+  if (ops < 3) step(timed(S_CFG, [&] { return doCfg(millis()); }));
+  if (ops < 3) step(timed(S_ALERTS, [&] { return doAlerts(millis()); }));
+  if (ops < 3) step(timed(S_META, [&] { return doMeta(millis()); }));
+  if (ops < 3) step(timed(S_DAILY, [&] { return doFinished(); }));
+  if (ops < 3) step(timed(S_METER, [&] { return doMeterDay(); }));
+  if (ops < 3) step(timed(S_MTD, [&] { return doMtd(millis()); }));
+  if (ops < 3) step(timed(S_DIAG, [&] { return doDiag(millis()); }));
+  if (ops < 3) step(timed(S_PRUNE, [&] { return doPrune(millis(), ep, today); }));
   if (!otaReq_) otaReq_ = rota::takeRetry();  // 1.0.0: an update that restarted for memory runs first
   if (restartReq_) {
     restartNow();
   } else if (otaReq_) {
+    crumbs::step(S_OTA);  // restarts on success; a crash shows "uplink in update"
     runOta();
+    crumbs::step(S_IDLE);
   } else if (st_.cloudOkBoot && rota::repo()[0] && probeDue(millis())) {
     otaProbed_ = true;  // the same TLS path as an update (one session at a time)
     tProbe_ = millis();
     fb.drop();
-    rota::probe();
+    timed(S_PROBE, [&] { rota::probe(); return true; });
     tStatus_ = millis() - cfg::STATUS_MS;
   }
   opsEvents(millis(), ep, today);

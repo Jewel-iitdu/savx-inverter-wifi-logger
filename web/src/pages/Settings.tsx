@@ -9,6 +9,7 @@ import { idbClear } from '../lib/idb';
 import { CFG_DEFAULTS, CFG_FIELDS, validateCfgValue, type Cfg, type Live, type Status } from '../data/types';
 import { Banner, Card, KV, Segmented, Switch, ToggleRow } from '../components/ui';
 import { FirmwareCard, versionCode } from '../components/FirmwareCard';
+import { LoggerLog } from '../components/LoggerLog';
 import { outputIsVA } from '../lib/decode';
 import { PF_DEFAULT, PF_MAX, PF_MIN, parsePf, usePowerPrefs } from '../lib/power';
 import { localizeDigits as dg, t, tj } from '../lib/i18n';
@@ -286,6 +287,8 @@ export function SettingsPage() {
           ]}
         />
       </Card>
+
+      <LoggerLog keepDays={cfg.keepEventDays} />
 
       <Card title={t('w.inverter')}>
         <KV

@@ -120,6 +120,7 @@ bool FirebaseRest::ensureAuth(uint32_t nowMs) {
   bool stillValid = haveToken_ && (int32_t)(nowMs - (expiryMs_ + cfg::TOKEN_REFRESH_BEFORE_S * 1000UL)) < 0;
   if (!authBackoff_.ready(nowMs) || (holdUntilMs_ && (int32_t)(nowMs - holdUntilMs_) < 0)) return stillValid;
   holdUntilMs_ = 0;
+  authTries_++;
   // One TLS session at a time (as for OTA, Telegram and e-mail): the largest internal heap block is ~32 KB, too small
   // for a second handshake next to the RTDB keep-alive session. Costs one RTDB handshake an hour.
   db_.stop();

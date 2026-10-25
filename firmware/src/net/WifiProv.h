@@ -27,6 +27,7 @@ class WifiProv {
   bool wifiUp() const;
   bool everConnected() const { return everUp_; }
   const String& apName() const { return apName_; }
+  uint8_t lastDisconnectReason() const;  // 1.0.2: last STA_DISCONNECTED reason (outage log)
 
  private:
   void saveParams();
